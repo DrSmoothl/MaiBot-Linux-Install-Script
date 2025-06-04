@@ -430,7 +430,7 @@ check_system_requirements() {
 install_dependencies() {
     print_info "检查并安装依赖..."
     
-    local dependencies=("curl" "wget" "unzip" "tar" "git" "g++" "xvfb" "screen" "xauth")
+    local dependencies=("curl" "wget" "unzip" "tar" "git" "g++" "xvfb" "screen" "xauth" "python3-dev")
     
     for dep in "${dependencies[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
