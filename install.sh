@@ -747,6 +747,334 @@ install_python() {
     fi
 }
 
+# 创建全局maibot命令
+create_global_command() {
+    print_info "正在创建全局maibot命令..."
+    
+    # 创建maibot命令脚本
+    local maibot_script="/usr/local/bin/maibot"
+    
+    # 检查是否有sudo权限
+    if ! sudo -n true 2>/dev/null; then
+        print_warning "需要sudo权限来创建全局命令，请输入密码"
+    fi
+    
+    # 创建maibot命令脚本
+    sudo tee "$maibot_script" > /dev/null << EOF
+#!/bin/bash
+# MaiBot全局命令脚本
+# 版本: 1.0.0
+
+MAIBOT_DIR="$MAIBOT_DIR"
+ADAPTER_DIR="$ADAPTER_DIR"
+NAPCAT_DIR="$NAPCAT_DIR"
+
+show_help() {
+    echo "MaiBot 管理工具"
+    echo ""
+    echo "用法: maibot <命令> [选项]"
+    echo ""
+    echo "命令:"
+    echo "  start [component]     启动组件"
+    echo "    maibot               启动MaiBot本体"
+    echo "    adapter              启动MaiBot-NapCat-Adapter"
+    echo "    napcat               启动NapcatQQ"
+    echo "    all                  启动所有组件"
+    echo ""
+    echo "  stop [component]      停止组件"
+    echo "    maibot               停止MaiBot本体"
+    echo "    adapter              停止MaiBot-NapCat-Adapter"
+    echo "    napcat               停止NapcatQQ"
+    echo "    all                  停止所有组件"
+    echo ""
+    echo "  status [component]    查看组件状态"
+    echo "    maibot               查看MaiBot本体状态"
+    echo "    adapter              查看MaiBot-NapCat-Adapter状态"
+    echo "    napcat               查看NapcatQQ状态"
+    echo "    all                  查看所有组件状态"
+    echo ""
+    echo "  restart [component]   重启组件"
+    echo "    maibot               重启MaiBot本体"
+    echo "    adapter              重启MaiBot-NapCat-Adapter"
+    echo "    napcat               重启NapcatQQ"
+    echo "    all                  重启所有组件"
+    echo ""
+    echo "  logs [component]      查看日志"
+    echo "    maibot               查看MaiBot本体日志"
+    echo "    adapter              查看MaiBot-NapCat-Adapter日志"
+    echo "    napcat               查看NapcatQQ日志"
+    echo ""
+    echo "  update [component]    更新组件"
+    echo "    maibot               更新MaiBot本体"
+    echo "    adapter              更新MaiBot-NapCat-Adapter"
+    echo "    napcat               更新NapcatQQ"
+    echo "    all                  更新所有组件"
+    echo ""
+    echo "  help                  显示此帮助信息"
+    echo ""
+    echo "示例:"
+    echo "  maibot start maibot    # 启动MaiBot本体"
+    echo "  maibot stop all        # 停止所有组件"
+    echo "  maibot status          # 查看所有组件状态"
+    echo "  maibot logs maibot     # 查看MaiBot本体日志"
+}
+
+start_maibot() {
+    echo "启动MaiBot本体..."
+    if [[ -d "\$MAIBOT_DIR" ]]; then
+        cd "\$MAIBOT_DIR"
+        if [[ -f "start.sh" ]]; then
+            nohup ./start.sh > logs/maibot.log 2>&1 &
+            echo \$! > maibot.pid
+            echo "MaiBot本体已启动，PID: \$(cat maibot.pid)"
+        else
+            echo "错误: 未找到启动脚本 start.sh"
+            return 1
+        fi
+    else
+        echo "错误: MaiBot安装目录不存在: \$MAIBOT_DIR"
+        return 1
+    fi
+}
+
+start_adapter() {
+    echo "启动MaiBot-NapCat-Adapter..."
+    if [[ -d "\$ADAPTER_DIR" ]]; then
+        cd "\$ADAPTER_DIR"
+        if [[ -f "start.sh" ]]; then
+            nohup ./start.sh > logs/adapter.log 2>&1 &
+            echo \$! > adapter.pid
+            echo "MaiBot-NapCat-Adapter已启动，PID: \$(cat adapter.pid)"
+        else
+            echo "错误: 未找到启动脚本 start.sh"
+            return 1
+        fi
+    else
+        echo "错误: Adapter安装目录不存在: \$ADAPTER_DIR"
+        return 1
+    fi
+}
+
+start_napcat() {
+    echo "启动NapcatQQ..."
+    if [[ -d "\$NAPCAT_DIR" ]]; then
+        cd "\$NAPCAT_DIR"
+        if [[ -f "napcat.sh" ]]; then
+            nohup ./napcat.sh > logs/napcat.log 2>&1 &
+            echo \$! > napcat.pid
+            echo "NapcatQQ已启动，PID: \$(cat napcat.pid)"
+        else
+            echo "错误: 未找到启动脚本 napcat.sh"
+            return 1
+        fi
+    else
+        echo "错误: NapCat安装目录不存在: \$NAPCAT_DIR"
+        return 1
+    fi
+}
+
+stop_component() {
+    local component=\$1
+    local dir=\$2
+    local pid_file="\$dir/\$component.pid"
+    
+    if [[ -f "\$pid_file" ]]; then
+        local pid=\$(cat "\$pid_file")
+        if kill -0 "\$pid" 2>/dev/null; then
+            kill "\$pid"
+            rm "\$pid_file"
+            echo "\$component已停止"
+        else
+            echo "\$component进程不存在，清理PID文件"
+            rm "\$pid_file"
+        fi
+    else
+        echo "\$component未运行或PID文件不存在"
+    fi
+}
+
+status_component() {
+    local component=\$1
+    local dir=\$2
+    local pid_file="\$dir/\$component.pid"
+    
+    if [[ -f "\$pid_file" ]]; then
+        local pid=\$(cat "\$pid_file")
+        if kill -0 "\$pid" 2>/dev/null; then
+            echo "\$component: 运行中 (PID: \$pid)"
+        else
+            echo "\$component: 已停止 (PID文件存在但进程不存在)"
+        fi
+    else
+        echo "\$component: 已停止"
+    fi
+}
+
+case "\$1" in
+    start)
+        case "\$2" in
+            maibot)
+                start_maibot
+                ;;
+            adapter)
+                start_adapter
+                ;;
+            napcat)
+                start_napcat
+                ;;
+            all|"")
+                start_maibot
+                start_adapter
+                start_napcat
+                ;;
+            *)
+                echo "错误: 未知组件 '\$2'"
+                echo "使用 'maibot help' 查看可用命令"
+                exit 1
+                ;;
+        esac
+        ;;
+    stop)
+        case "\$2" in
+            maibot)
+                stop_component "maibot" "\$MAIBOT_DIR"
+                ;;
+            adapter)
+                stop_component "adapter" "\$ADAPTER_DIR"
+                ;;
+            napcat)
+                stop_component "napcat" "\$NAPCAT_DIR"
+                ;;
+            all|"")
+                stop_component "maibot" "\$MAIBOT_DIR"
+                stop_component "adapter" "\$ADAPTER_DIR"
+                stop_component "napcat" "\$NAPCAT_DIR"
+                ;;
+            *)
+                echo "错误: 未知组件 '\$2'"
+                echo "使用 'maibot help' 查看可用命令"
+                exit 1
+                ;;
+        esac
+        ;;
+    status)
+        case "\$2" in
+            maibot)
+                status_component "maibot" "\$MAIBOT_DIR"
+                ;;
+            adapter)
+                status_component "adapter" "\$ADAPTER_DIR"
+                ;;
+            napcat)
+                status_component "napcat" "\$NAPCAT_DIR"
+                ;;
+            all|"")
+                status_component "maibot" "\$MAIBOT_DIR"
+                status_component "adapter" "\$ADAPTER_DIR"
+                status_component "napcat" "\$NAPCAT_DIR"
+                ;;
+            *)
+                echo "错误: 未知组件 '\$2'"
+                echo "使用 'maibot help' 查看可用命令"
+                exit 1
+                ;;
+        esac
+        ;;
+    restart)
+        case "\$2" in
+            maibot)
+                stop_component "maibot" "\$MAIBOT_DIR"
+                sleep 2
+                start_maibot
+                ;;
+            adapter)
+                stop_component "adapter" "\$ADAPTER_DIR"
+                sleep 2
+                start_adapter
+                ;;
+            napcat)
+                stop_component "napcat" "\$NAPCAT_DIR"
+                sleep 2
+                start_napcat
+                ;;
+            all|"")
+                stop_component "maibot" "\$MAIBOT_DIR"
+                stop_component "adapter" "\$ADAPTER_DIR"
+                stop_component "napcat" "\$NAPCAT_DIR"
+                sleep 2
+                start_maibot
+                start_adapter
+                start_napcat
+                ;;
+            *)
+                echo "错误: 未知组件 '\$2'"
+                echo "使用 'maibot help' 查看可用命令"
+                exit 1
+                ;;
+        esac
+        ;;
+    logs)
+        case "\$2" in
+            maibot)
+                if [[ -f "\$MAIBOT_DIR/logs/maibot.log" ]]; then
+                    tail -f "\$MAIBOT_DIR/logs/maibot.log"
+                else
+                    echo "日志文件不存在: \$MAIBOT_DIR/logs/maibot.log"
+                fi
+                ;;
+            adapter)
+                if [[ -f "\$ADAPTER_DIR/logs/adapter.log" ]]; then
+                    tail -f "\$ADAPTER_DIR/logs/adapter.log"
+                else
+                    echo "日志文件不存在: \$ADAPTER_DIR/logs/adapter.log"
+                fi
+                ;;
+            napcat)
+                if [[ -f "\$NAPCAT_DIR/logs/napcat.log" ]]; then
+                    tail -f "\$NAPCAT_DIR/logs/napcat.log"
+                else
+                    echo "日志文件不存在: \$NAPCAT_DIR/logs/napcat.log"
+                fi
+                ;;
+            *)
+                echo "错误: 请指定要查看日志的组件 (maibot|adapter|napcat)"
+                echo "使用 'maibot help' 查看可用命令"
+                exit 1
+                ;;
+        esac
+        ;;
+    update)
+        echo "更新功能暂未实现"
+        ;;
+    help|--help|-h|"")
+        show_help
+        ;;
+    *)
+        echo "错误: 未知命令 '\$1'"
+        echo "使用 'maibot help' 查看可用命令"
+        exit 1
+        ;;
+esac
+EOF
+    
+    # 设置执行权限
+    sudo chmod +x "$maibot_script"
+    
+    # 验证命令是否创建成功
+    if [[ -f "$maibot_script" ]]; then
+        print_success "全局maibot命令创建成功"
+        print_info "现在您可以使用以下命令:"
+        print_info "  maibot start        # 启动所有组件"
+        print_info "  maibot start maibot # 启动MaiBot本体"
+        print_info "  maibot stop all     # 停止所有组件"
+        print_info "  maibot status       # 查看状态"
+        print_info "  maibot help         # 查看帮助"
+    else
+        print_error "全局maibot命令创建失败"
+        return 1
+    fi
+}
+
 # 安装MaiBot本体
 install_maibot() {
     print_info "开始安装MaiBot本体..."
@@ -861,18 +1189,31 @@ EOF
     # 创建配置目录
     mkdir -p config logs data
     
-    # 复制示例配置文件（如果存在）
-    if [[ -f "config.example.json" ]]; then
-        cp "config.example.json" "config/config.json"
-        print_success "已复制配置文件模板"
-    elif [[ -f "config.example.yaml" ]]; then
-        cp "config.example.yaml" "config/config.yaml"
-        print_success "已复制配置文件模板"
-    elif [[ -f "config/config.example.json" ]]; then
-        cp "config/config.example.json" "config/config.json"
-        print_success "已复制配置文件模板"
+    # 复制示例配置文件
+    print_info "复制示例配置文件..."
+    
+    # 复制bot_config_template.toml到config目录
+    if [[ -f "template/bot_config_template.toml" ]]; then
+        cp "template/bot_config_template.toml" "config/bot_config.toml"
+        print_success "已复制bot_config.toml配置文件"
     else
-        print_warning "未找到配置文件模板，需要手动配置"
+        print_warning "未找到template/bot_config_template.toml文件"
+    fi
+    
+    # 复制lpmm_config_template.toml到config目录
+    if [[ -f "template/lpmm_config_template.toml" ]]; then
+        cp "template/lpmm_config_template.toml" "config/lpmm_config.toml"
+        print_success "已复制lpmm_config.toml配置文件"
+    else
+        print_warning "未找到template/lpmm_config_template.toml文件"
+    fi
+    
+    # 复制template.env到MaiBot根目录并重命名为.env
+    if [[ -f "template/template.env" ]]; then
+        cp "template/template.env" ".env"
+        print_success "已复制.env环境配置文件"
+    else
+        print_warning "未找到template/template.env文件"
     fi
     
     # 设置执行权限
@@ -884,9 +1225,13 @@ EOF
 # MaiBot启动脚本
 cd "$(dirname "$0")"
 source venv/bin/activate
-python main.py
+python bot.py
 EOF
     chmod +x start.sh
+    
+    # 创建全局maibot命令
+    print_info "创建全局maibot命令..."
+    create_global_command
     
     print_success "MaiBot本体安装完成"
     print_info "虚拟环境位置: $MAIBOT_DIR/venv"
