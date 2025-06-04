@@ -1160,20 +1160,6 @@ install_maibot() {
     # 激活虚拟环境并安装依赖
     print_info "激活虚拟环境并安装依赖..."
     
-    # 检查requirements.txt是否存在
-    if [[ ! -f "requirements.txt" ]]; then
-        print_warning "未找到requirements.txt文件"
-        # 创建基本的requirements.txt
-        cat > requirements.txt << 'EOF'
-# 基本依赖
-requests>=2.25.0
-aiohttp>=3.8.0
-pydantic>=1.8.0
-loguru>=0.6.0
-EOF
-        print_info "已创建基本的requirements.txt文件"
-    fi
-    
     # 激活虚拟环境并安装依赖
     # 使用source命令激活虚拟环境，然后安装依赖
     print_info "使用阿里云镜像源安装Python依赖..."
@@ -1359,40 +1345,12 @@ EOF
     # 创建配置目录
     mkdir -p config logs data
     
-    # 复制示例配置文件（如果存在）
-    if [[ -f "config.example.json" ]]; then
-        cp "config.example.json" "config/config.json"
-        print_success "已复制配置文件模板"
-    elif [[ -f "config.example.yaml" ]]; then
-        cp "config.example.yaml" "config/config.yaml"
-        print_success "已复制配置文件模板"
-    elif [[ -f "config/config.example.json" ]]; then
-        cp "config/config.example.json" "config/config.json"
-        print_success "已复制配置文件模板"
+    # 复制配置文件模板
+    if [[ -f "template/template_config.toml" ]]; then
+        cp "template/template_config.toml" "config.toml"
+        print_success "已复制template_config.toml配置文件"
     else
-        print_warning "未找到配置文件模板，需要手动配置"
-        # 创建基本配置文件
-        cat > config/config.json << 'EOF'
-{
-    "napcat": {
-        "ws_url": "ws://localhost:6099",
-        "http_url": "http://localhost:6099",
-        "access_token": ""
-    },
-    "maibot": {
-        "ws_url": "ws://localhost:8080",
-        "http_url": "http://localhost:8080",
-        "access_token": ""
-    },
-    "adapter": {
-        "host": "0.0.0.0",
-        "port": 7099,
-        "debug": false,
-        "reconnect_interval": 5
-    }
-}
-EOF
-        print_info "已创建基本配置文件模板"
+        print_warning "未找到template/template_config.toml文件"
     fi
     
     # 设置执行权限
