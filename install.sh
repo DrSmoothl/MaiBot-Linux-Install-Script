@@ -2617,6 +2617,10 @@ perform_uninstall() {
     print_info "感谢您使用MaiBot生态系统!"
     
     log_message "MaiBot生态系统卸载完成"
+    
+    # 卸载完成后直接退出，不返回主菜单
+    print_info "脚本即将退出..."
+    exit 0
 }
 
 # 创建配置备份
