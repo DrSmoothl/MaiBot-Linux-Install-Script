@@ -30,6 +30,7 @@ REQUIRED_COMMANDS=("curl" "git" "python3" "unzip")
 # UI配置
 FORCE_YES=false
 QUIET_MODE=false
+DEBUG_MENU_MODE=false
 
 # 安装模块定义
 declare -A INSTALL_MODULES=(
@@ -501,6 +502,90 @@ install_dependencies() {
 }
 
 # =============================================================================
+# 命令行参数解析函数
+# =============================================================================
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --debug)
+                DEBUG_MENU_MODE=true
+                print_debug "调试模式已启用，将显示额外的菜单选项"
+                ;;
+            --help|-h)
+                show_help_and_exit
+                ;;
+            --version|-v)
+                echo "$SCRIPT_NAME v$SCRIPT_VERSION"
+                exit 0
+                ;;
+            *)
+                print_warning "未知参数: $1"
+                print_info "使用 --help 查看可用参数"
+                ;;
+        esac
+        shift
+    done
+}
+
+show_help_and_exit() {
+    echo "$SCRIPT_NAME v$SCRIPT_VERSION"
+    echo "MaiBot生态系统Linux一键安装脚本"
+    echo ""
+    echo "用法:"
+    echo "  $0 [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --debug      启用调试模式，显示额外的菜单选项"
+    echo "  --help, -h   显示此帮助信息"
+    echo "  --version, -v 显示版本信息"
+    echo ""
+    echo "调试模式选项:"
+    echo "  仅添加maibot命令脚本 - 只创建全局maibot命令而不安装其他组件"
+    echo ""
+    exit 0
+}
+
+# 仅添加maibot命令脚本的函数
+only_add_maibot_command() {
+    print_header "仅添加maibot命令脚本"
+    print_info "此选项将只创建全局maibot命令脚本，而不安装其他组件"
+    echo ""
+    
+    if ! confirm_action "确认仅创建maibot命令脚本？"; then
+        print_info "操作已取消"
+        return
+    fi
+    
+    # 检查系统环境
+    detect_os
+    check_root
+    
+    # 创建必要的目录结构
+    print_info "创建基础目录结构..."
+    mkdir -p "$INSTALL_BASE_DIR" || {
+        print_error "无法创建安装目录: $INSTALL_BASE_DIR"
+        return 1
+    }
+    
+    # 只调用创建全局命令的函数
+    print_info "创建全局maibot命令..."
+    if create_global_command; then
+        print_success "maibot命令脚本创建成功！"
+        print_info "现在您可以使用以下命令:"
+        print_info "  maibot help           # 查看完整帮助"
+        print_info "  maibot start all      # 启动所有组件（需要先安装组件）"
+        print_info "  maibot status          # 查看组件状态"
+        echo ""
+        print_warning "注意: 此模式只创建了命令脚本，您仍需要安装实际的组件才能使用完整功能"
+    else
+        print_error "maibot命令脚本创建失败"
+        return 1
+    fi
+    
+    log_message "仅添加maibot命令脚本操作完成"
+}
+
+# =============================================================================
 # 对话框函数（CLI界面）
 # =============================================================================
 show_welcome() {
@@ -521,32 +606,40 @@ show_menu() {
     echo -e "${GREEN}3)${NC} 卸载"
     echo -e "${GREEN}4)${NC} 系统信息"
     echo -e "${GREEN}5)${NC} 查看日志"
+    
+    # 调试模式下显示额外选项
+    if [[ "$DEBUG_MENU_MODE" == "true" ]]; then
+        echo -e "${CYAN}6)${NC} 仅添加maibot命令脚本 ${YELLOW}(调试选项)${NC}"
+    fi
+    
     echo -e "${GREEN}0)${NC} 退出"
     echo ""
 }
 
 read_choice() {
     local choice
+    local max_choice=5
+    
+    # 调试模式下允许选择6
+    if [[ "$DEBUG_MENU_MODE" == "true" ]]; then
+        max_choice=6
+    fi
     
     while true; do
-        read -p "请输入选择 [0-5]: " choice
+        read -p "请输入选择 [0-$max_choice]: " choice
         
         # 去除前后空白字符
         choice=$(echo "$choice" | tr -d '[:space:]')
         
         # 验证输入
-        case "$choice" in
-            [0-5])
-                echo "$choice"
-                return 0
-                ;;
-            "")
-                print_error "输入不能为空，请输入0-5之间的数字"
-                ;;
-            *)
-                print_error "无效选择，请输入0-5之间的数字"
-                ;;
-        esac
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 0 ]] && [[ "$choice" -le "$max_choice" ]]; then
+            echo "$choice"
+            return 0
+        elif [[ -z "$choice" ]]; then
+            print_error "输入不能为空，请输入0-$max_choice之间的数字"
+        else
+            print_error "无效选择，请输入0-$max_choice之间的数字"
+        fi
     done
 }
 
@@ -731,7 +824,7 @@ install_python() {
             $INSTALL_CMD python3 python3-pip
             ;;
         pacman)
-            $INSTALL_CMD python python-pip
+            $INSTALL_CMD python3 python3-pip
             ;;
         apk)
             $INSTALL_CMD python3 py3-pip
@@ -856,9 +949,10 @@ start_maibot() {
         fi
         
         cd "\$MAIBOT_DIR"
-        if [[ -f "start.sh" ]]; then
-            # 创建启动脚本包装器，确保虚拟环境激活
-            screen -dmS "\$SESSION_MAIBOT" bash -c "cd '\$MAIBOT_DIR' && source venv/bin/activate && ./start.sh"
+        # 检查bot.py文件是否存在
+        if [[ -f "bot.py" ]]; then
+            # 直接启动bot.py，确保虚拟环境激活
+            screen -dmS "\$SESSION_MAIBOT" bash -c "cd '\$MAIBOT_DIR' && source venv/bin/activate && python3 bot.py"
             sleep 2
             if screen -list | grep -q "\$SESSION_MAIBOT"; then
                 echo "MaiBot本体已在Screen会话 '\$SESSION_MAIBOT' 中启动"
@@ -868,7 +962,8 @@ start_maibot() {
                 return 1
             fi
         else
-            echo "错误: 未找到启动脚本 start.sh"
+            echo "错误: 未找到MaiBot启动文件 bot.py"
+            echo "请确保MaiBot已正确安装"
             return 1
         fi
     else
@@ -1393,15 +1488,9 @@ install_maibot() {
     # 设置执行权限
     find . -name "*.py" -type f -exec chmod +x {} \; 2>/dev/null || true
     
-    # 创建启动脚本
-    cat > start.sh << 'EOF'
-#!/bin/bash
-# MaiBot启动脚本
-cd "$(dirname "$0")"
-source venv/bin/activate
-python bot.py
-EOF
-    chmod +x start.sh
+    
+    # 设置执行权限
+    find . -name "*.py" -type f -exec chmod +x {} \; 2>/dev/null || true
     
     # 创建全局maibot命令
     print_info "创建全局maibot命令..."
@@ -1543,16 +1632,6 @@ EOF
     # 设置执行权限
     find . -name "*.py" -type f -exec chmod +x {} \; 2>/dev/null || true
     
-    # 创建启动脚本
-    cat > start.sh << 'EOF'
-#!/bin/bash
-# MaiBot-NapCat-Adapter启动脚本
-cd "$(dirname "$0")"
-source venv/bin/activate
-python main.py
-EOF
-    chmod +x start.sh
-    
     print_success "MaiBot-NapCat-Adapter安装完成"
     print_info "虚拟环境位置: $ADAPTER_DIR/venv"
     print_info "配置文件位置: $ADAPTER_DIR/config/"
@@ -1672,17 +1751,6 @@ install_napcat() {
         print_error "NapCat启动器安装失败"
         return 1
     }
-    
-    # 创建启动脚本
-    print_info "创建NapCat启动脚本..."
-    cat > launcher.sh << 'EOF'
-#!/bin/bash
-Xvfb :1 -screen 0 1x1x8 +extension GLX +render > /dev/null 2>&1 &
-export DISPLAY=:1
-LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox
-EOF
-    
-    chmod +x launcher.sh
     
     # 清理临时文件
     rm -f "$napcat_file" QQ.rpm QQ.deb launcher.cpp 2>/dev/null || true
@@ -1988,7 +2056,7 @@ get_pid() {
     local service="$1"
     case "$service" in
         maibot)
-            pgrep -f "python.*main.py" | grep -v grep | head -1
+            pgrep -f "python3.*bot.py" | grep -v grep | head -1
             ;;
         adapter)
             pgrep -f "maibot-napcat-adapter.*main.py" | grep -v grep | head -1
@@ -2041,7 +2109,7 @@ start() {
                 echo "Starting Adapter..."
                 cd "$ADAPTER_HOME"
                 source venv/bin/activate
-                nohup python main.py > /dev/null 2>&1 &
+                nohup python3 main.py > /dev/null 2>&1 &
                 sleep 3
             fi
             ;;
@@ -2050,7 +2118,7 @@ start() {
                 echo "Starting MaiBot..."
                 cd "$MAIBOT_HOME"
                 source venv/bin/activate
-                nohup python main.py > /dev/null 2>&1 &
+                nohup python3 bot.py > /dev/null 2>&1 &
                 sleep 2
             fi
             ;;
@@ -2147,147 +2215,9 @@ EOF
 
 # 创建启动脚本
 create_startup_scripts() {
-    print_info "创建启动脚本..."
-    
-    # 创建MaiBot启动脚本
-    cat > "$INSTALL_BASE_DIR/start_maibot.sh" << EOF
-#!/bin/bash
-cd "$MAIBOT_DIR"
-source venv/bin/activate
-python main.py
-EOF
-    
-    # 创建Adapter启动脚本
-    cat > "$INSTALL_BASE_DIR/start_adapter.sh" << EOF
-#!/bin/bash
-cd "$ADAPTER_DIR"
-source venv/bin/activate
-python main.py
-EOF
-    
-    # 创建NapcatQQ启动脚本
-    cat > "$INSTALL_BASE_DIR/start_napcat.sh" << EOF
-#!/bin/bash
-cd "$NAPCAT_DIR"
-# 启动虚拟显示服务器
-Xvfb :1 -screen 0 1024x768x24 +extension GLX +render > /dev/null 2>&1 &
-export DISPLAY=:1
-# 使用预加载库启动NapCat
-LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox
-EOF
-    
-    # 创建完整启动脚本
-    cat > "$INSTALL_BASE_DIR/start_all.sh" << EOF
-#!/bin/bash
-echo "启动MaiBot生态系统..."
-
-# 加载环境变量
-if [[ -f "$INSTALL_BASE_DIR/maibot.env" ]]; then
-    source "$INSTALL_BASE_DIR/maibot.env"
-fi
-
-# 启动虚拟显示服务器
-echo "启动虚拟显示服务器..."
-if ! pgrep -f "Xvfb :1" > /dev/null; then
-    Xvfb :1 -screen 0 1024x768x24 +extension GLX +render > /dev/null 2>&1 &
-    sleep 3
-    echo "虚拟显示服务器已启动"
-else
-    echo "虚拟显示服务器已运行"
-fi
-
-# 启动NapcatQQ
-echo "启动NapcatQQ..."
-cd "$NAPCAT_DIR"
-export DISPLAY=:1
-nohup bash -c "LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox" > logs/napcat.log 2>&1 &
-sleep 10
-
-# 启动Adapter
-echo "启动MaiBot-NapCat-Adapter..."
-cd "$ADAPTER_DIR"
-source venv/bin/activate
-nohup python main.py > logs/adapter.log 2>&1 &
-sleep 5
-
-# 启动MaiBot
-echo "启动MaiBot..."
-cd "$MAIBOT_DIR"
-source venv/bin/activate
-python main.py
-
-EOF
-    
-    # 创建停止脚本
-    cat > "$INSTALL_BASE_DIR/stop_all.sh" << 'EOF'
-#!/bin/bash
-echo "停止MaiBot生态系统..."
-
-# 停止MaiBot
-echo "停止MaiBot..."
-pkill -f "python.*main.py" 2>/dev/null || true
-
-# 停止Adapter
-echo "停止Adapter..."
-pkill -f "maibot-napcat-adapter.*main.py" 2>/dev/null || true
-
-# 停止NapCat
-echo "停止NapCat..."
-pkill -f "LD_PRELOAD.*libnapcat_launcher.so" 2>/dev/null || true
-pkill -f "qq --no-sandbox" 2>/dev/null || true
-
-# 停止虚拟显示服务器
-echo "停止虚拟显示服务器..."
-pkill -f "Xvfb :1" 2>/dev/null || true
-
-echo "所有服务已停止"
-EOF
-    
-    # 创建状态检查脚本
-    cat > "$INSTALL_BASE_DIR/status.sh" << 'EOF'
-#!/bin/bash
-echo "=== MaiBot 生态系统状态 ==="
-
-# 检查虚拟显示服务器
-if pgrep -f "Xvfb :1" > /dev/null; then
-    echo "✓ 虚拟显示服务器: 运行中"
-else
-    echo "✗ 虚拟显示服务器: 未运行"
-fi
-
-# 检查NapCat
-if pgrep -f "LD_PRELOAD.*libnapcat_launcher.so" > /dev/null; then
-    echo "✓ NapCat: 运行中"
-else
-    echo "✗ NapCat: 未运行"
-fi
-
-# 检查Adapter
-if pgrep -f "maibot-napcat-adapter.*main.py" > /dev/null; then
-    echo "✓ Adapter: 运行中"
-else
-    echo "✗ Adapter: 未运行"
-fi
-
-# 检查MaiBot
-if pgrep -f "python.*main.py" | grep -v adapter > /dev/null; then
-    echo "✓ MaiBot: 运行中"
-else
-    echo "✗ MaiBot: 未运行"
-fi
-EOF
-    
-    # 设置执行权限
-    chmod +x "$INSTALL_BASE_DIR"/*.sh
-    
-    print_success "启动脚本创建完成"
-    print_info "可用脚本:"
-    print_info "  启动所有服务: $INSTALL_BASE_DIR/start_all.sh"
-    print_info "  停止所有服务: $INSTALL_BASE_DIR/stop_all.sh"
-    print_info "  检查状态: $INSTALL_BASE_DIR/status.sh"
-    print_info "  服务管理: $INSTALL_BASE_DIR/maibot-service.sh"
-    
-    log_message "启动脚本创建完成: $INSTALL_BASE_DIR"
+    print_info "所有功能已整合到maibot命令中，无需创建单独的启动脚本"
+    print_success "maibot命令已包含所有启动和管理功能"
+    log_message "跳过创建单独启动脚本，功能已整合到maibot命令"
 }
 
 # 启动服务
@@ -2685,7 +2615,7 @@ perform_uninstall() {
     
     # 停止MaiBot
     print_debug "停止MaiBot本体..."
-    pkill -f "python.*main.py" 2>/dev/null && sleep 2
+    pkill -f "python3.*bot.py" 2>/dev/null && sleep 2
     
     # 停止Adapter
     print_debug "停止MaiBot-NapCat-Adapter..."
@@ -2903,6 +2833,9 @@ trap cleanup EXIT
 # 主程序
 # =============================================================================
 main() {
+    # 解析命令行参数
+    parse_arguments "$@"
+    
     # 初始化日志系统
     init_logging
     
@@ -2960,6 +2893,14 @@ main() {
                 ;;
             5)
                 show_logs
+                ;;
+            6)
+                if [[ "$DEBUG_MENU_MODE" == "true" ]]; then
+                    print_info "执行调试选项：仅添加maibot命令脚本..."
+                    only_add_maibot_command
+                else
+                    print_error "内部错误：选项6仅在调试模式下可用"
+                fi
                 ;;
             0)
                 print_info "感谢使用 $SCRIPT_NAME!"
