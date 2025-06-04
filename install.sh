@@ -598,6 +598,48 @@ show_welcome() {
     echo ""
 }
 
+# 显示并确认用户协议和隐私协议
+show_and_accept_agreements() {
+    print_header "用户协议和隐私协议"
+    
+    echo -e "${YELLOW}在开始安装MaiBot之前，请仔细阅读以下协议：${NC}"
+    echo ""
+    echo -e "${CYAN}📋 用户协议 (EULA):${NC}"
+    echo -e "${BLUE}https://github.com/MaiM-with-u/MaiBot/blob/main/EULA.md${NC}"
+    echo ""
+    echo -e "${CYAN}🔒 隐私协议:${NC}"
+    echo -e "${BLUE}https://github.com/MaiM-with-u/MaiBot/blob/main/PRIVACY.md${NC}"
+    echo ""
+    echo -e "${WHITE}请访问上述链接仔细阅读协议内容。${NC}"
+    echo -e "${YELLOW}继续安装即表示您已阅读并同意上述用户协议和隐私协议。${NC}"
+    echo ""
+    
+    while true; do
+        echo -e "${BOLD}请选择：${NC}"
+        echo -e "${GREEN}1)${NC} 我已阅读并同意用户协议和隐私协议，继续安装"
+        echo -e "${RED}2)${NC} 我不同意协议，退出安装"
+        echo ""
+        
+        read -p "请输入选择 [1-2]: " agreement_choice
+        
+        case "$agreement_choice" in
+            1)
+                print_success "感谢您同意协议，将继续安装..."
+                log_message "用户已同意用户协议和隐私协议"
+                return 0
+                ;;
+            2)
+                print_info "您选择不同意协议，安装已取消"
+                log_message "用户拒绝了用户协议或隐私协议，安装取消"
+                exit 0
+                ;;
+            *)
+                print_error "无效的选择，请输入 1 或 2"
+                ;;
+        esac
+    done
+}
+
 show_menu() {
     echo ""
     echo -e "${BOLD}请选择操作:${NC}"
@@ -1488,9 +1530,9 @@ install_maibot() {
     # 设置执行权限
     find . -name "*.py" -type f -exec chmod +x {} \; 2>/dev/null || true
     
-    
-    # 设置执行权限
-    find . -name "*.py" -type f -exec chmod +x {} \; 2>/dev/null || true
+    # 生成协议确认文件
+    print_info "生成协议确认文件..."
+    generate_agreement_confirmation_files
     
     # 创建全局maibot命令
     print_info "创建全局maibot命令..."
@@ -1882,7 +1924,83 @@ install_napcat_launcher() {
     return 0
 }
 
-# 配置模块间连接
+# 生成协议确认文件
+generate_agreement_confirmation_files() {
+    print_info "生成用户协议和隐私协议确认文件..."
+    
+    # 检查并确保安装md5sum工具
+    if ! command -v md5sum >/dev/null 2>&1; then
+        print_info "MD5工具未找到，正在安装..."
+        if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y coreutils
+        elif command -v yum >/dev/null 2>&1; then
+            sudo yum install -y coreutils
+        elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y coreutils
+        elif command -v pacman >/dev/null 2>&1; then
+            sudo pacman -S --noconfirm coreutils
+        elif command -v zypper >/dev/null 2>&1; then
+            sudo zypper install -y coreutils
+        else
+            print_error "无法自动安装MD5工具，请手动安装coreutils包"
+            return 1
+        fi
+    fi
+    
+    # 定义本地协议文件路径
+    local eula_file="$MAIBOT_DIR/EULA.md"
+    local privacy_file="$MAIBOT_DIR/PRIVACY.md"
+    
+    # 检查协议文件是否存在
+    if [[ ! -f "$eula_file" ]]; then
+        print_error "EULA文件不存在: $eula_file"
+        return 1
+    fi
+    
+    if [[ ! -f "$privacy_file" ]]; then
+        print_error "隐私政策文件不存在: $privacy_file"
+        return 1
+    fi
+    
+    # 计算MD5哈希
+    local eula_hash
+    local privacy_hash
+    
+    eula_hash=$(md5sum "$eula_file" | cut -d' ' -f1)
+    privacy_hash=$(md5sum "$privacy_file" | cut -d' ' -f1)
+    
+    print_debug "EULA MD5: $eula_hash"
+    print_debug "Privacy MD5: $privacy_hash"
+    
+    # 创建确认文件 - 只包含MD5哈希
+    echo "$eula_hash" > "$MAIBOT_DIR/eula.confirmed"
+    echo "$privacy_hash" > "$MAIBOT_DIR/privacy.confirmed"
+    
+    # 更新.env文件
+    local env_file="$MAIBOT_DIR/.env"
+    if [[ -f "$env_file" ]]; then
+        # 移除已存在的相关条目
+        sed -i '/^EULA_CONFIRMED_HASH=/d' "$env_file" 2>/dev/null || true
+        sed -i '/^PRIVACY_CONFIRMED_HASH=/d' "$env_file" 2>/dev/null || true
+        sed -i '/^AGREEMENTS_ACCEPTED_DATE=/d' "$env_file" 2>/dev/null || true
+    fi
+    
+    # 添加新的环境变量
+    cat >> "$env_file" << EOF
+
+# Agreement confirmation variables
+EULA_CONFIRMED_HASH=$eula_hash
+PRIVACY_CONFIRMED_HASH=$privacy_hash
+AGREEMENTS_ACCEPTED_DATE=$(date '+%Y-%m-%d %H:%M:%S')
+EOF
+    
+    print_success "协议确认文件生成完成"
+    log_message "生成协议确认文件: eula.confirmed (hash: $eula_hash), privacy.confirmed (hash: $privacy_hash)"
+}
+
+# =============================================================================
+# 模块间连接配置
+# =============================================================================
 configure_modules() {
     print_info "配置模块间连接..."
     
@@ -2024,7 +2142,7 @@ EOF
     print_info "生成启动脚本..."
     create_startup_scripts
     
-    # 创建环境变量配置
+    # 创建环境变量配置文件（可选）
     print_info "创建环境变量配置..."
     cat > "$INSTALL_BASE_DIR/maibot.env" << EOF
 # MaiBot环境变量配置
@@ -2206,8 +2324,8 @@ EOF
     print_success "模块连接配置完成"
     print_info "配置文件位置:"
     print_info "  NapcatQQ: $NAPCAT_DIR/config/onebot11.json"
-    print_info "  Adapter: $ADAPTER_DIR/config/config.json"
-    print_info "  MaiBot: $MAIBOT_DIR/config/config.json"
+    print_info "  Adapter: $ADAPTER_DIR/config/"
+    print_info "  MaiBot: $MAIBOT_DIR/config/"
     print_info "服务管理: $INSTALL_BASE_DIR/maibot-service.sh {start|stop|restart|status}"
     
     log_message "模块连接配置完成"
@@ -2318,6 +2436,9 @@ start_services() {
 # =============================================================================
 full_install() {
     print_header "开始完整安装"
+    
+    # 显示并要求用户接受协议
+    show_and_accept_agreements
     
     print_info "即将安装以下组件:"
     print_info "• MaiBot本体"
@@ -2472,6 +2593,9 @@ perform_custom_install() {
     
     print_header "开始自定义安装"
     print_info "安装组件: ${components[*]}"
+    
+    # 显示并要求用户接受协议
+    show_and_accept_agreements
     
     # 系统检查和准备
     print_info "执行系统检查..."
