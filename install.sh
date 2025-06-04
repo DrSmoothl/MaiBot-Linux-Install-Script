@@ -1593,6 +1593,11 @@ install_linux_qq() {
                 log_message "ERROR: QQ package install failed"
                 return 1
             }
+            # 安装额外依赖
+            print_info "安装QQ运行依赖..."
+            $INSTALL_CMD nss libXScrnSaver || print_warning "某些依赖安装失败，但可能不影响运行"
+            # 对于RHEL/CentOS/Fedora，音频库通常是 alsa-lib
+            $INSTALL_CMD alsa-lib || print_warning "音频库安装失败，但可能不影响运行"
             ;;
         apt)
             if [[ ! -f "QQ.deb" ]]; then
@@ -1610,7 +1615,21 @@ install_linux_qq() {
             }
             # 安装额外依赖
             $INSTALL_CMD libnss3 libgbm1 || true
-            $INSTALL_CMD libasound2 || $INSTALL_CMD libasound2t64 || true
+            
+            # 智能安装 libasound2 依赖
+            print_info "安装音频依赖..."
+            if apt list --installed libasound2t64 2>/dev/null | grep -q libasound2t64; then
+                print_info "检测到 libasound2t64 已安装"
+            elif apt-cache show libasound2t64 >/dev/null 2>&1; then
+                print_info "使用 libasound2t64 (新版本)"
+                $INSTALL_CMD libasound2t64 || print_warning "libasound2t64 安装失败，但可能不影响运行"
+            elif apt-cache show libasound2 >/dev/null 2>&1; then
+                print_info "使用 libasound2 (传统版本)"
+                $INSTALL_CMD libasound2 || print_warning "libasound2 安装失败，但可能不影响运行"
+            else
+                print_warning "无法找到合适的音频库，尝试安装liboss4-salsa-asound2"
+                $INSTALL_CMD liboss4-salsa-asound2 || print_warning "音频库安装失败，但可能不影响运行"
+            fi
             ;;
     esac
     
