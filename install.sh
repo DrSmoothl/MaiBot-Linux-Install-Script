@@ -11,9 +11,9 @@ set -euo pipefail
 # 全局变量
 # =============================================================================
 SCRIPT_NAME="MaiBot Ecosystem Installer"
-SCRIPT_VERSION="1.2.0"
-SCRIPT_AUTHOR="MaiM-with-u"
-SCRIPT_URL="https://github.com/MaiM-with-u/MaiBot"
+SCRIPT_VERSION="2.0.0"
+SCRIPT_AUTHOR="MaiBot Team @MotricSeven"
+SCRIPT_URL="https://github.com/DrSmoothl/MaiBot-Linux-Install-Script"
 
 # 日志配置
 LOG_DIR="/var/log/maibot-installer"
@@ -1080,23 +1080,35 @@ start_adapter() {
     if [[ -d "\$ADAPTER_DIR" ]]; then
         if screen -list | grep -q "\$SESSION_ADAPTER"; then
             echo "MaiBot-NapCat-Adapter会话已存在，使用 'maibot switch adapter' 连接"
-            return 0
+            return 0        
         fi
         
         cd "\$ADAPTER_DIR"
-        if [[ -f "start.sh" ]]; then
-            # 创建启动脚本包装器，确保虚拟环境激活
+        # 检查可能的启动文件（按优先级）
+        if [[ -f "adapter.py" ]]; then
+            # 直接启动adapter.py，确保虚拟环境激活
+            screen -dmS "\$SESSION_ADAPTER" bash -c "cd '\$ADAPTER_DIR' && source venv/bin/activate && python3 adapter.py"
+            MAIN_FILE="adapter.py"
+        elif [[ -f "main.py" ]]; then
+            # 启动main.py
+            screen -dmS "\$SESSION_ADAPTER" bash -c "cd '\$ADAPTER_DIR' && source venv/bin/activate && python3 main.py"
+            MAIN_FILE="main.py"
+        elif [[ -f "start.sh" ]]; then
+            # 如果存在start.sh则使用它
             screen -dmS "\$SESSION_ADAPTER" bash -c "cd '\$ADAPTER_DIR' && source venv/bin/activate && ./start.sh"
-            sleep 2
-            if screen -list | grep -q "\$SESSION_ADAPTER"; then
-                echo "MaiBot-NapCat-Adapter已在Screen会话 '\$SESSION_ADAPTER' 中启动"
-                echo "使用 'maibot switch adapter' 连接到会话"
-            else
-                echo "错误: MaiBot-NapCat-Adapter启动失败"
-                return 1
-            fi
+            MAIN_FILE="start.sh"
         else
-            echo "错误: 未找到启动脚本 start.sh"
+            echo "错误: 未找到适配器启动文件 (adapter.py, main.py, 或 start.sh)"
+            echo "请确保MaiBot-NapCat-Adapter已正确安装"
+            return 1
+        fi
+        
+        sleep 2
+        if screen -list | grep -q "\$SESSION_ADAPTER"; then
+            echo "MaiBot-NapCat-Adapter已在Screen会话 '\$SESSION_ADAPTER' 中启动 (使用: \$MAIN_FILE)"
+            echo "使用 'maibot switch adapter' 连接到会话"
+        else
+            echo "错误: MaiBot-NapCat-Adapter启动失败"
             return 1
         fi
     else
