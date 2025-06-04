@@ -2096,97 +2096,7 @@ create_startup_scripts() {
 }
 
 # 启动服务
-start_services() {
-    print_info "启动MaiBot生态系统服务..."
-    
-    # 检查是否所有组件都已安装
-    local missing_components=()
-    
-    if [[ ! -d "$MAIBOT_DIR" ]] || [[ ! -f "$MAIBOT_DIR/main.py" ]]; then
-        missing_components+=("MaiBot本体")
-    fi
-    
-    if [[ ! -d "$ADAPTER_DIR" ]] || [[ ! -f "$ADAPTER_DIR/main.py" ]]; then
-        missing_components+=("MaiBot-NapCat-Adapter")
-    fi
-    
-    if [[ ! -d "$NAPCAT_DIR" ]] || [[ ! -f "$NAPCAT_DIR/libnapcat_launcher.so" ]]; then
-        missing_components+=("NapcatQQ")
-    fi
-    
-    if [[ ${#missing_components[@]} -gt 0 ]]; then
-        print_error "以下组件未安装或不完整："
-        for component in "${missing_components[@]}"; do
-            print_error "  - $component"
-        done
-        print_error "请先完成完整安装后再启动服务"
-        return 1
-    fi
-    
-    # 检查服务管理脚本是否存在
-    if [[ ! -f "$INSTALL_BASE_DIR/maibot-service.sh" ]]; then
-        print_error "服务管理脚本不存在，请先运行NapcatQQ配置"
-        return 1
-    fi
-    
-    # 使用服务管理脚本启动服务
-    print_info "启动虚拟显示服务器..."
-    "$INSTALL_BASE_DIR/maibot-service.sh" start xvfb
-    
-    if [[ $? -eq 0 ]]; then
-        print_success "虚拟显示服务器启动成功"
-    else
-        print_warning "虚拟显示服务器启动可能有问题"
-    fi
-    
-    print_info "启动NapcatQQ..."
-    "$INSTALL_BASE_DIR/maibot-service.sh" start napcat
-    
-    if [[ $? -eq 0 ]]; then
-        print_success "NapcatQQ启动成功"
-        sleep 8  # 等待NapcatQQ完全启动
-    else
-        print_error "NapcatQQ启动失败"
-        return 1
-    fi
-    
-    print_info "启动MaiBot-NapCat-Adapter..."
-    "$INSTALL_BASE_DIR/maibot-service.sh" start adapter
-    
-    if [[ $? -eq 0 ]]; then
-        print_success "MaiBot-NapCat-Adapter启动成功"
-        sleep 5  # 等待Adapter完全启动
-    else
-        print_error "MaiBot-NapCat-Adapter启动失败"
-        return 1
-    fi
-    
-    print_info "启动MaiBot本体..."
-    "$INSTALL_BASE_DIR/maibot-service.sh" start maibot
-    
-    if [[ $? -eq 0 ]]; then
-        print_success "MaiBot本体启动成功"
-        sleep 3
-    else
-        print_error "MaiBot本体启动失败"
-        return 1
-    fi
-    
-    # 检查所有服务状态
-    print_info "检查服务状态..."
-    sleep 2
-    "$INSTALL_BASE_DIR/maibot-service.sh" status
-    
-    print_success "MaiBot生态系统启动完成"
-    print_info "使用以下命令管理服务:"
-    print_info "  检查状态: $INSTALL_BASE_DIR/maibot-service.sh status"
-    print_info "  启动服务: $INSTALL_BASE_DIR/maibot-service.sh start [service]"
-    print_info "  停止服务: $INSTALL_BASE_DIR/maibot-service.sh stop [service]"
-    print_info "  重启服务: $INSTALL_BASE_DIR/maibot-service.sh restart [service]"
-    
-    log_message "MaiBot生态系统服务启动完成"
-    return 0
-}
+
 
 # =============================================================================
 # 主要功能函数
@@ -2209,7 +2119,7 @@ full_install() {
     fi
     
     # 执行安装步骤
-    local steps=("更新软件包列表" "安装系统依赖" "创建安装目录" "安装Python" "安装MaiBot本体" "安装MaiBot-NapCat-Adapter" "安装NapcatQQ" "配置NapcatQQ" "启动服务")
+    local steps=("更新软件包列表" "安装系统依赖" "创建安装目录" "安装Python" "安装MaiBot本体" "安装MaiBot-NapCat-Adapter" "安装NapcatQQ" "配置NapcatQQ")
     local total=${#steps[@]}
     
     for i in "${!steps[@]}"; do
@@ -2273,18 +2183,18 @@ full_install() {
                     return 1
                 }
                 ;;
-            8)
-                # 启动服务
-                start_services || {
-                    print_error "服务启动失败"
-                    return 1
-                }
-                ;;
         esac
     done
     
     print_success "完整安装完成!"
     print_info "所有组件已正确安装和配置。"
+    print_info ""
+    print_info "要启动MaiBot生态系统，请使用以下命令："
+    print_info "  maibot start    # 启动所有服务"
+    print_info "  maibot status   # 查看服务状态"
+    print_info "  maibot stop     # 停止所有服务"
+    print_info ""
+    print_info "更多命令选项请使用: maibot --help"
     
     log_message "完整安装完成"
 }
@@ -2455,11 +2365,13 @@ perform_custom_install() {
         fi
         
         print_info "服务管理: $INSTALL_BASE_DIR/maibot-service.sh"
-        
-        # 询问是否启动服务
-        if confirm_action "是否启动已安装的服务?"; then
-            start_services
-        fi
+        print_info ""
+        print_info "要启动已安装的服务，请使用以下命令："
+        print_info "  maibot start    # 启动所有服务"
+        print_info "  maibot status   # 查看服务状态"
+        print_info "  maibot stop     # 停止所有服务"
+        print_info ""
+        print_info "更多命令选项请使用: maibot --help"
     else
         print_warning "部分组件安装失败，请检查错误信息"
         print_info "可以稍后重新运行安装脚本"
