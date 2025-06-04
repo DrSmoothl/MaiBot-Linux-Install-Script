@@ -27,10 +27,6 @@ MIN_DISK_SPACE_GB=2
 MIN_MEMORY_MB=512
 REQUIRED_COMMANDS=("curl" "git" "python3" "unzip")
 
-# Python版本配置
-PYTHON_VERSION="3.12"
-PYTHON_MIN_VERSION="3.12.8"
-
 # UI配置
 FORCE_YES=false
 QUIET_MODE=false
@@ -599,7 +595,6 @@ show_welcome() {
     echo -e "${GRAY}支持的系统: ${SUPPORTED_DISTROS[*]}${NC}"
     echo -e "${GRAY}当前系统: $OS $OS_VERSION${NC}"
     echo -e "${GRAY}包管理器: $PACKAGE_MANAGER${NC}"
-    echo -e "${GRAY}Python版本: ${PYTHON_VERSION} (将自动安装)${NC}"
     echo ""
 }
 
@@ -851,46 +846,47 @@ create_install_directories() {
 
 # 安装Python和pip
 install_python() {
-    print_info "检查并安装Python 3.12..."
+    print_info "检查并安装Python..."
     
-    # 定义固定的Python版本
-    local PYTHON_VERSION="3.12"
-    local PYTHON_CMD="python${PYTHON_VERSION}"
-    
-    # 检查Python 3.12是否已安装
-    if command -v "$PYTHON_CMD" &> /dev/null; then
-        local python_version=$($PYTHON_CMD --version)
-        print_success "Python 3.12已安装: $python_version"
+    # 检查Python3是否已安装
+    if command -v python3 &> /dev/null; then
+        local python_version=$(python3 --version)
+        print_success "Python已安装: $python_version"
         
-        # 创建python3软链接（如果不存在）
-        if ! command -v python3 &> /dev/null; then
-            print_info "创建python3软链接..."
-            sudo ln -sf "$(which $PYTHON_CMD)" /usr/bin/python3 2>/dev/null || true
-        fi
-        
-        # 对于Debian/Ubuntu系统，检查python3.12-venv是否可用
+        # 对于Debian/Ubuntu系统，额外检查python3-venv是否可用
         if [[ "$PACKAGE_MANAGER" == "apt" ]]; then
-            print_info "检查python3.12-venv模块可用性..."
+            print_info "检查python3-venv模块可用性..."
             
             # 测试是否能创建虚拟环境
             local test_venv_dir="/tmp/test_venv_$$"
-            if ! $PYTHON_CMD -m venv "$test_venv_dir" 2>/dev/null; then
-                print_warning "python3.12-venv模块不可用，正在安装..."
+            if ! python3 -m venv "$test_venv_dir" 2>/dev/null; then
+                print_warning "python3-venv模块不可用，正在安装..."
                 
-                $INSTALL_CMD "python${PYTHON_VERSION}-venv" || {
-                    print_error "无法安装python3.12-venv包"
-                    return 1
-                }
+                # 获取Python版本号（如3.13）
+                local python_minor_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+                print_info "检测到Python版本: $python_minor_version"
+                
+                # 尝试安装对应版本的venv包
+                local venv_package="python${python_minor_version}-venv"
+                print_info "尝试安装 $venv_package..."
+                
+                if ! $INSTALL_CMD "$venv_package"; then
+                    print_warning "$venv_package 安装失败，尝试安装通用的python3-venv包..."
+                    $INSTALL_CMD python3-venv || {
+                        print_error "无法安装python3-venv包"
+                        return 1
+                    }
+                fi
                 
                 # 再次测试虚拟环境创建
-                if ! $PYTHON_CMD -m venv "$test_venv_dir" 2>/dev/null; then
-                    print_error "安装python3.12-venv后仍无法创建虚拟环境"
+                if ! python3 -m venv "$test_venv_dir" 2>/dev/null; then
+                    print_error "安装python3-venv后仍无法创建虚拟环境"
                     return 1
                 fi
                 
-                print_success "python3.12-venv模块安装成功"
+                print_success "python3-venv模块安装成功"
             else
-                print_success "python3.12-venv模块已可用"
+                print_success "python3-venv模块已可用"
             fi
             
             # 清理测试虚拟环境
@@ -900,116 +896,47 @@ install_python() {
         return 0
     fi
     
-    # 检查通用python3是否是3.12版本
-    if command -v python3 &> /dev/null; then
-        local current_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
-        if [[ "$current_version" == "3.12" ]]; then
-            print_success "Python 3.12已通过python3命令可用"
+    print_info "正在安装Python..."
+    case "$PACKAGE_MANAGER" in
+        apt)
+            # 对于apt，先安装基础Python包
+            $INSTALL_CMD python3 python3-pip || {
+                print_error "Python3基础包安装失败"
+                return 1
+            }
             
-            # 对于Debian/Ubuntu系统，检查venv模块
-            if [[ "$PACKAGE_MANAGER" == "apt" ]]; then
-                local test_venv_dir="/tmp/test_venv_$$"
-                if ! python3 -m venv "$test_venv_dir" 2>/dev/null; then
-                    print_info "安装python3.12-venv..."
-                    $INSTALL_CMD "python${PYTHON_VERSION}-venv" || {
-                        print_error "无法安装python3.12-venv包"
+            # 获取安装后的Python版本并安装对应的venv包
+            if command -v python3 &> /dev/null; then
+                local python_minor_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+                local venv_package="python${python_minor_version}-venv"
+                print_info "安装 $venv_package..."
+                
+                if ! $INSTALL_CMD "$venv_package"; then
+                    print_warning "$venv_package 安装失败，尝试安装通用的python3-venv包..."
+                    $INSTALL_CMD python3-venv || {
+                        print_error "无法安装python3-venv包"
                         return 1
                     }
                 fi
-                rm -rf "$test_venv_dir" 2>/dev/null || true
             fi
-            
-            return 0
-        else
-            print_warning "检测到Python版本: $current_version，需要安装Python 3.12"
-        fi
-    fi
-    
-    print_info "正在安装Python 3.12..."
-    case "$PACKAGE_MANAGER" in
-        apt)
-            print_info "添加deadsnakes PPA以安装Python 3.12..."
-            # 安装软件包管理工具
-            $INSTALL_CMD software-properties-common || {
-                print_error "无法安装software-properties-common"
-                return 1
-            }
-            
-            # 添加deadsnakes PPA
-            add-apt-repository ppa:deadsnakes/ppa -y || {
-                print_warning "添加deadsnakes PPA失败，尝试直接安装"
-            }
-            
-            # 更新包列表
-            $UPDATE_CMD || true
-            
-            # 安装Python 3.12及相关包
-            $INSTALL_CMD "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-pip" "python${PYTHON_VERSION}-venv" "python${PYTHON_VERSION}-dev" || {
-                print_error "Python 3.12安装失败"
-                return 1
-            }
-            
-            # 创建python3软链接
-            print_info "创建python3软链接..."
-            sudo update-alternatives --install /usr/bin/python3 python3 "/usr/bin/python${PYTHON_VERSION}" 1 || {
-                sudo ln -sf "/usr/bin/python${PYTHON_VERSION}" /usr/bin/python3
-            }
             ;;
         yum|dnf)
-            # 对于RHEL/CentOS/Fedora，Python 3.12可能需要从EPEL或其他源安装
-            if command -v dnf &> /dev/null; then
-                $INSTALL_CMD "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-pip" "python${PYTHON_VERSION}-devel" || {
-                    print_error "Python 3.12安装失败"
-                    return 1
-                }
-            else
-                $INSTALL_CMD "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-pip" "python${PYTHON_VERSION}-devel" || {
-                    print_error "Python 3.12安装失败"
-                    return 1
-                }
-            fi
-            
-            # 创建python3软链接
-            sudo ln -sf "/usr/bin/python${PYTHON_VERSION}" /usr/bin/python3 2>/dev/null || true
+            $INSTALL_CMD python3 python3-pip
             ;;
         zypper)
-            $INSTALL_CMD "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-pip" "python${PYTHON_VERSION}-devel" || {
-                print_error "Python 3.12安装失败"
-                return 1
-            }
-            
-            sudo ln -sf "/usr/bin/python${PYTHON_VERSION}" /usr/bin/python3 2>/dev/null || true
+            $INSTALL_CMD python3 python3-pip
             ;;
         pacman)
-            # Arch Linux通常有最新版本的Python
-            $INSTALL_CMD python python-pip || {
-                print_error "Python安装失败"
-                return 1
-            }
+            $INSTALL_CMD python3 python3-pip
             ;;
         apk)
-            # Alpine Linux
-            $INSTALL_CMD "python3" "py3-pip" || {
-                print_error "Python安装失败"
-                return 1
-            }
+            $INSTALL_CMD python3 py3-pip
             ;;
     esac
     
-    # 验证安装
     if command -v python3 &> /dev/null; then
-        local installed_version=$(python3 --version)
-        print_success "Python安装成功: $installed_version"
-        
-        # 验证是否为3.12版本
-        local version_check=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
-        if [[ "$version_check" == "3.12" ]]; then
-            print_success "Python 3.12安装验证成功"
-        else
-            print_warning "安装的Python版本为: $version_check，建议使用3.12版本"
-        fi
-        
-        log_message "Python安装完成: $installed_version"
+        print_success "Python安装成功: $(python3 --version)"
+        log_message "Python安装完成: $(python3 --version)"
     else
         print_error "Python安装失败"
         return 1
