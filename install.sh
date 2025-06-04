@@ -763,19 +763,35 @@ create_global_command() {
     sudo tee "$maibot_script" > /dev/null << EOF
 #!/bin/bash
 # MaiBot全局命令脚本
-# 版本: 1.0.0
+# 版本: 2.0.0 - 支持Screen会话管理
 
 MAIBOT_DIR="$MAIBOT_DIR"
 ADAPTER_DIR="$ADAPTER_DIR"
 NAPCAT_DIR="$NAPCAT_DIR"
 
+# Screen会话名称
+SESSION_MAIBOT="maibot-main"
+SESSION_ADAPTER="maibot-adapter" 
+SESSION_NAPCAT="maibot-napcat"
+
+# 检查screen是否安装
+check_screen() {
+    if ! command -v screen >/dev/null 2>&1; then
+        echo "错误: screen未安装，请先安装screen"
+        echo "Ubuntu/Debian: sudo apt install screen"
+        echo "CentOS/RHEL: sudo yum install screen"
+        echo "Fedora: sudo dnf install screen"
+        exit 1
+    fi
+}
+
 show_help() {
-    echo "MaiBot 管理工具"
+    echo "MaiBot 管理工具 (Screen版本)"
     echo ""
     echo "用法: maibot <命令> [选项]"
     echo ""
     echo "命令:"
-    echo "  start [component]     启动组件"
+    echo "  start [component]     启动组件 (使用Screen会话)"
     echo "    maibot               启动MaiBot本体"
     echo "    adapter              启动MaiBot-NapCat-Adapter"
     echo "    napcat               启动NapcatQQ"
@@ -787,11 +803,18 @@ show_help() {
     echo "    napcat               停止NapcatQQ"
     echo "    all                  停止所有组件"
     echo ""
+    echo "  switch <component>    切换到组件的Screen会话"
+    echo "    maibot               切换到MaiBot本体会话"
+    echo "    adapter              切换到MaiBot-NapCat-Adapter会话"
+    echo "    napcat               切换到NapcatQQ会话"
+    echo ""
     echo "  status [component]    查看组件状态"
     echo "    maibot               查看MaiBot本体状态"
     echo "    adapter              查看MaiBot-NapCat-Adapter状态"
     echo "    napcat               查看NapcatQQ状态"
     echo "    all                  查看所有组件状态"
+    echo ""
+    echo "  list                  列出所有MaiBot相关的Screen会话"
     echo ""
     echo "  restart [component]   重启组件"
     echo "    maibot               重启MaiBot本体"
@@ -812,21 +835,38 @@ show_help() {
     echo ""
     echo "  help                  显示此帮助信息"
     echo ""
+    echo "Screen会话管理说明:"
+    echo "  - 使用 Ctrl+A 然后按 D 来脱离会话"
+    echo "  - 使用 'maibot switch <component>' 重新连接到会话"
+    echo "  - 会话在后台持续运行，即使SSH断开也不会停止"
+    echo ""
     echo "示例:"
-    echo "  maibot start maibot    # 启动MaiBot本体"
-    echo "  maibot stop all        # 停止所有组件"
-    echo "  maibot status          # 查看所有组件状态"
-    echo "  maibot logs maibot     # 查看MaiBot本体日志"
+    echo "  maibot start all         # 启动所有组件"
+    echo "  maibot switch maibot     # 切换到MaiBot本体会话"
+    echo "  maibot list              # 查看所有会话"
+    echo "  maibot status            # 查看所有组件状态"
 }
 
 start_maibot() {
-    echo "启动MaiBot本体..."
+    echo "在Screen会话中启动MaiBot本体..."
     if [[ -d "\$MAIBOT_DIR" ]]; then
+        if screen -list | grep -q "\$SESSION_MAIBOT"; then
+            echo "MaiBot本体会话已存在，使用 'maibot switch maibot' 连接"
+            return 0
+        fi
+        
         cd "\$MAIBOT_DIR"
         if [[ -f "start.sh" ]]; then
-            nohup ./start.sh > logs/maibot.log 2>&1 &
-            echo \$! > maibot.pid
-            echo "MaiBot本体已启动，PID: \$(cat maibot.pid)"
+            # 创建启动脚本包装器，确保虚拟环境激活
+            screen -dmS "\$SESSION_MAIBOT" bash -c "cd '\$MAIBOT_DIR' && source venv/bin/activate && ./start.sh"
+            sleep 2
+            if screen -list | grep -q "\$SESSION_MAIBOT"; then
+                echo "MaiBot本体已在Screen会话 '\$SESSION_MAIBOT' 中启动"
+                echo "使用 'maibot switch maibot' 连接到会话"
+            else
+                echo "错误: MaiBot本体启动失败"
+                return 1
+            fi
         else
             echo "错误: 未找到启动脚本 start.sh"
             return 1
@@ -838,13 +878,25 @@ start_maibot() {
 }
 
 start_adapter() {
-    echo "启动MaiBot-NapCat-Adapter..."
+    echo "在Screen会话中启动MaiBot-NapCat-Adapter..."
     if [[ -d "\$ADAPTER_DIR" ]]; then
+        if screen -list | grep -q "\$SESSION_ADAPTER"; then
+            echo "MaiBot-NapCat-Adapter会话已存在，使用 'maibot switch adapter' 连接"
+            return 0
+        fi
+        
         cd "\$ADAPTER_DIR"
         if [[ -f "start.sh" ]]; then
-            nohup ./start.sh > logs/adapter.log 2>&1 &
-            echo \$! > adapter.pid
-            echo "MaiBot-NapCat-Adapter已启动，PID: \$(cat adapter.pid)"
+            # 创建启动脚本包装器，确保虚拟环境激活
+            screen -dmS "\$SESSION_ADAPTER" bash -c "cd '\$ADAPTER_DIR' && source venv/bin/activate && ./start.sh"
+            sleep 2
+            if screen -list | grep -q "\$SESSION_ADAPTER"; then
+                echo "MaiBot-NapCat-Adapter已在Screen会话 '\$SESSION_ADAPTER' 中启动"
+                echo "使用 'maibot switch adapter' 连接到会话"
+            else
+                echo "错误: MaiBot-NapCat-Adapter启动失败"
+                return 1
+            fi
         else
             echo "错误: 未找到启动脚本 start.sh"
             return 1
@@ -856,15 +908,32 @@ start_adapter() {
 }
 
 start_napcat() {
-    echo "启动NapcatQQ..."
+    echo "在Screen会话中启动NapcatQQ..."
     if [[ -d "\$NAPCAT_DIR" ]]; then
+        if screen -list | grep -q "\$SESSION_NAPCAT"; then
+            echo "NapcatQQ会话已存在，使用 'maibot switch napcat' 连接"
+            return 0
+        fi
+        
         cd "\$NAPCAT_DIR"
-        if [[ -f "napcat.sh" ]]; then
-            nohup ./napcat.sh > logs/napcat.log 2>&1 &
-            echo \$! > napcat.pid
-            echo "NapcatQQ已启动，PID: \$(cat napcat.pid)"
+        # 启动虚拟显示服务器和NapcatQQ
+        screen -dmS "\$SESSION_NAPCAT" bash -c "
+            cd '\$NAPCAT_DIR'
+            # 启动虚拟显示服务器
+            if ! pgrep -f 'Xvfb :1' > /dev/null; then
+                Xvfb :1 -screen 0 1024x768x24 +extension GLX +render > /dev/null 2>&1 &
+                sleep 3
+            fi
+            export DISPLAY=:1
+            # 启动NapcatQQ
+            LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox
+        "
+        sleep 5
+        if screen -list | grep -q "\$SESSION_NAPCAT"; then
+            echo "NapcatQQ已在Screen会话 '\$SESSION_NAPCAT' 中启动"
+            echo "使用 'maibot switch napcat' 连接到会话"
         else
-            echo "错误: 未找到启动脚本 napcat.sh"
+            echo "错误: NapcatQQ启动失败"
             return 1
         fi
     else
@@ -875,40 +944,128 @@ start_napcat() {
 
 stop_component() {
     local component=\$1
-    local dir=\$2
-    local pid_file="\$dir/\$component.pid"
+    local session_name=""
     
-    if [[ -f "\$pid_file" ]]; then
-        local pid=\$(cat "\$pid_file")
-        if kill -0 "\$pid" 2>/dev/null; then
-            kill "\$pid"
-            rm "\$pid_file"
-            echo "\$component已停止"
-        else
-            echo "\$component进程不存在，清理PID文件"
-            rm "\$pid_file"
+    case "\$component" in
+        maibot)
+            session_name="\$SESSION_MAIBOT"
+            ;;
+        adapter)
+            session_name="\$SESSION_ADAPTER"
+            ;;
+        napcat)
+            session_name="\$SESSION_NAPCAT"
+            ;;
+        *)
+            echo "错误: 未知组件 '\$component'"
+            return 1
+            ;;
+    esac
+    
+    if screen -list | grep -q "\$session_name"; then
+        screen -S "\$session_name" -X quit
+        echo "\$component 会话已停止"
+        
+        # 如果是napcat，还需要清理虚拟显示服务器
+        if [[ "\$component" == "napcat" ]]; then
+            pkill -f "Xvfb :1" 2>/dev/null || true
+            echo "虚拟显示服务器已清理"
         fi
     else
-        echo "\$component未运行或PID文件不存在"
+        echo "\$component 会话未运行"
     fi
 }
 
 status_component() {
     local component=\$1
-    local dir=\$2
-    local pid_file="\$dir/\$component.pid"
+    local session_name=""
     
-    if [[ -f "\$pid_file" ]]; then
-        local pid=\$(cat "\$pid_file")
-        if kill -0 "\$pid" 2>/dev/null; then
-            echo "\$component: 运行中 (PID: \$pid)"
-        else
-            echo "\$component: 已停止 (PID文件存在但进程不存在)"
-        fi
+    case "\$component" in
+        maibot)
+            session_name="\$SESSION_MAIBOT"
+            ;;
+        adapter)
+            session_name="\$SESSION_ADAPTER"
+            ;;
+        napcat)
+            session_name="\$SESSION_NAPCAT"
+            ;;
+        *)
+            echo "错误: 未知组件 '\$component'"
+            return 1
+            ;;
+    esac
+    
+    if screen -list | grep -q "\$session_name"; then
+        echo "\$component: 运行中 (Screen会话: \$session_name)"
     else
         echo "\$component: 已停止"
     fi
 }
+
+switch_to_session() {
+    local component=\$1
+    local session_name=""
+    
+    case "\$component" in
+        maibot)
+            session_name="\$SESSION_MAIBOT"
+            ;;
+        adapter)
+            session_name="\$SESSION_ADAPTER"
+            ;;
+        napcat)
+            session_name="\$SESSION_NAPCAT"
+            ;;
+        *)
+            echo "错误: 未知组件 '\$component'"
+            echo "可用组件: maibot, adapter, napcat"
+            return 1
+            ;;
+    esac
+    
+    if screen -list | grep -q "\$session_name"; then
+        echo "连接到 \$component 会话..."
+        echo "提示: 使用 Ctrl+A 然后按 D 脱离会话"
+        screen -r "\$session_name"
+    else
+        echo "错误: \$component 会话不存在或未运行"
+        echo "使用 'maibot start \$component' 启动组件"
+        return 1
+    fi
+}
+
+list_sessions() {
+    echo "MaiBot相关的Screen会话:"
+    echo "========================"
+    local found=false
+    
+    if screen -list | grep -q "\$SESSION_MAIBOT"; then
+        echo "✓ \$SESSION_MAIBOT (MaiBot本体)"
+        found=true
+    fi
+    
+    if screen -list | grep -q "\$SESSION_ADAPTER"; then
+        echo "✓ \$SESSION_ADAPTER (MaiBot-NapCat-Adapter)"
+        found=true
+    fi
+    
+    if screen -list | grep -q "\$SESSION_NAPCAT"; then
+        echo "✓ \$SESSION_NAPCAT (NapcatQQ)"
+        found=true
+    fi
+    
+    if [[ "\$found" == "false" ]]; then
+        echo "没有运行中的MaiBot会话"
+        echo "使用 'maibot start all' 启动所有组件"
+    fi
+    
+    echo ""
+    echo "使用 'maibot switch <component>' 连接到指定会话"
+}
+
+# 检查screen是否安装
+check_screen
 
 case "\$1" in
     start)
@@ -923,9 +1080,16 @@ case "\$1" in
                 start_napcat
                 ;;
             all|"")
-                start_maibot
-                start_adapter
+                echo "启动所有MaiBot组件..."
                 start_napcat
+                sleep 3
+                start_adapter
+                sleep 2
+                start_maibot
+                echo ""
+                echo "所有组件启动完成！"
+                echo "使用 'maibot list' 查看所有会话"
+                echo "使用 'maibot switch <component>' 连接到指定会话"
                 ;;
             *)
                 echo "错误: 未知组件 '\$2'"
@@ -937,18 +1101,20 @@ case "\$1" in
     stop)
         case "\$2" in
             maibot)
-                stop_component "maibot" "\$MAIBOT_DIR"
+                stop_component "maibot"
                 ;;
             adapter)
-                stop_component "adapter" "\$ADAPTER_DIR"
+                stop_component "adapter"
                 ;;
             napcat)
-                stop_component "napcat" "\$NAPCAT_DIR"
+                stop_component "napcat"
                 ;;
             all|"")
-                stop_component "maibot" "\$MAIBOT_DIR"
-                stop_component "adapter" "\$ADAPTER_DIR"
-                stop_component "napcat" "\$NAPCAT_DIR"
+                echo "停止所有MaiBot组件..."
+                stop_component "maibot"
+                stop_component "adapter"
+                stop_component "napcat"
+                echo "所有组件已停止"
                 ;;
             *)
                 echo "错误: 未知组件 '\$2'"
@@ -956,22 +1122,33 @@ case "\$1" in
                 exit 1
                 ;;
         esac
+        ;;
+    switch)
+        if [[ -z "\$2" ]]; then
+            echo "错误: 请指定要切换的组件"
+            echo "用法: maibot switch <component>"
+            echo "可用组件: maibot, adapter, napcat"
+            exit 1
+        fi
+        switch_to_session "\$2"
         ;;
     status)
         case "\$2" in
             maibot)
-                status_component "maibot" "\$MAIBOT_DIR"
+                status_component "maibot"
                 ;;
             adapter)
-                status_component "adapter" "\$ADAPTER_DIR"
+                status_component "adapter"
                 ;;
             napcat)
-                status_component "napcat" "\$NAPCAT_DIR"
+                status_component "napcat"
                 ;;
             all|"")
-                status_component "maibot" "\$MAIBOT_DIR"
-                status_component "adapter" "\$ADAPTER_DIR"
-                status_component "napcat" "\$NAPCAT_DIR"
+                echo "MaiBot组件状态:"
+                echo "==============="
+                status_component "maibot"
+                status_component "adapter"
+                status_component "napcat"
                 ;;
             *)
                 echo "错误: 未知组件 '\$2'"
@@ -980,31 +1157,38 @@ case "\$1" in
                 ;;
         esac
         ;;
+    list)
+        list_sessions
+        ;;
     restart)
         case "\$2" in
             maibot)
-                stop_component "maibot" "\$MAIBOT_DIR"
+                stop_component "maibot"
                 sleep 2
                 start_maibot
                 ;;
             adapter)
-                stop_component "adapter" "\$ADAPTER_DIR"
+                stop_component "adapter"
                 sleep 2
                 start_adapter
                 ;;
             napcat)
-                stop_component "napcat" "\$NAPCAT_DIR"
+                stop_component "napcat"
                 sleep 2
                 start_napcat
                 ;;
             all|"")
-                stop_component "maibot" "\$MAIBOT_DIR"
-                stop_component "adapter" "\$ADAPTER_DIR"
-                stop_component "napcat" "\$NAPCAT_DIR"
+                echo "重启所有MaiBot组件..."
+                stop_component "maibot"
+                stop_component "adapter"
+                stop_component "napcat"
+                sleep 3
+                start_napcat
+                sleep 3
+                start_adapter
                 sleep 2
                 start_maibot
-                start_adapter
-                start_napcat
+                echo "所有组件重启完成"
                 ;;
             *)
                 echo "错误: 未知组件 '\$2'"
@@ -1062,13 +1246,16 @@ EOF
     
     # 验证命令是否创建成功
     if [[ -f "$maibot_script" ]]; then
-        print_success "全局maibot命令创建成功"
+        print_success "全局maibot命令创建成功 (Screen版本)"
         print_info "现在您可以使用以下命令:"
-        print_info "  maibot start        # 启动所有组件"
-        print_info "  maibot start maibot # 启动MaiBot本体"
-        print_info "  maibot stop all     # 停止所有组件"
-        print_info "  maibot status       # 查看状态"
-        print_info "  maibot help         # 查看帮助"
+        print_info "  maibot start all      # 在Screen会话中启动所有组件"
+        print_info "  maibot switch maibot  # 切换到MaiBot本体会话"
+        print_info "  maibot switch adapter # 切换到适配器会话"
+        print_info "  maibot switch napcat  # 切换到NapcatQQ会话"
+        print_info "  maibot list           # 列出所有活动会话"
+        print_info "  maibot status         # 查看所有组件状态"
+        print_info "  maibot help           # 查看完整帮助"
+        print_warning "注意: 需要先安装screen包才能使用新功能"
     else
         print_error "全局maibot命令创建失败"
         return 1
