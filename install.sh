@@ -1176,7 +1176,8 @@ EOF
     
     # 激活虚拟环境并安装依赖
     # 使用source命令激活虚拟环境，然后安装依赖
-    if ! bash -c "source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"; then
+    print_info "使用阿里云镜像源安装Python依赖..."
+    if ! bash -c "source venv/bin/activate && pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ && pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/"; then
         print_error "无法安装Python依赖"
         return 1
     fi
@@ -1344,7 +1345,8 @@ EOF
     fi
     
     # 激活虚拟环境并安装依赖
-    if ! bash -c "source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"; then
+    print_info "使用阿里云镜像源安装Python依赖..."
+    if ! bash -c "source venv/bin/activate && pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ && pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/"; then
         print_error "无法安装Python依赖"
         return 1
     fi
