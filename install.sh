@@ -1999,336 +1999,93 @@ EOF
 }
 
 # =============================================================================
-# 模块间连接配置
+# NapCatQQ配置
 # =============================================================================
-configure_modules() {
-    print_info "配置模块间连接..."
-    
-    # 配置NapcatQQ
+configure_napcat() {
     print_info "配置NapcatQQ..."
-    if [[ -d "$NAPCAT_DIR" ]]; then
-        cd "$NAPCAT_DIR" || {
-            print_warning "无法进入NapcatQQ目录，跳过配置"
-        }
-        
-        # 创建NapCat配置文件
-        mkdir -p config
-        cat > config/onebot11.json << 'EOF'
-{
-    "http": {
-        "enable": true,
-        "host": "0.0.0.0",
-        "port": 6099,
-        "secret": "",
-        "enableHeart": true,
-        "enablePost": false,
-        "postUrls": []
-    },
-    "ws": {
-        "enable": true,
-        "host": "0.0.0.0",
-        "port": 6099
-    },
-    "reverseWs": {
-        "enable": false,
-        "urls": []
-    },
-    "GroupLocalTime": {
-        "Record": false,
-        "RecordList": []
-    },
-    "debug": false,
-    "heartInterval": 30000,
-    "messagePostFormat": "array",
-    "enableLocalFile2Url": true,
-    "musicSignUrl": "",
-    "reportSelfMessage": false,
-    "token": ""
-}
-EOF
-        print_success "NapcatQQ配置文件已创建"
-    fi
     
-    # 配置MaiBot-NapCat-Adapter
-    print_info "配置MaiBot-NapCat-Adapter..."
-    if [[ -d "$ADAPTER_DIR" ]] && [[ -f "$ADAPTER_DIR/config/config.json" ]]; then
-        cd "$ADAPTER_DIR" || {
-            print_warning "无法进入Adapter目录，跳过配置"
-        }
-        
-        # 更新Adapter配置文件
-        cat > config/config.json << 'EOF'
-{
-    "napcat": {
-        "ws_url": "ws://localhost:6099",
-        "http_url": "http://localhost:6099",
-        "access_token": ""
-    },
-    "maibot": {
-        "ws_url": "ws://localhost:8080",
-        "http_url": "http://localhost:8080",
-        "access_token": ""
-    },
-    "adapter": {
-        "host": "0.0.0.0",
-        "port": 7099,
-        "debug": false,
-        "reconnect_interval": 5,
-        "forward_events": true,
-        "forward_api": true
-    },
-    "logging": {
-        "level": "INFO",
-        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        "file": "logs/adapter.log",
-        "max_bytes": 10485760,
-        "backup_count": 5
-    }
-}
-EOF
-        print_success "MaiBot-NapCat-Adapter配置文件已更新"
-    fi
-    
-    # 配置MaiBot
-    print_info "配置MaiBot..."
-    if [[ -d "$MAIBOT_DIR" ]]; then
-        cd "$MAIBOT_DIR" || {
-            print_warning "无法进入MaiBot目录，跳过配置"
-        }
-        
-        # 创建或更新MaiBot配置文件
-        if [[ ! -f "config/config.json" ]] && [[ ! -f "config/config.yaml" ]]; then
-            # 创建基本配置文件
-            cat > config/config.json << 'EOF'
-{
-    "bot": {
-        "name": "MaiBot",
-        "admin_users": [],
-        "command_prefix": "/",
-        "auto_accept_friend": false,
-        "auto_accept_group": false
-    },
-    "adapter": {
-        "type": "onebot_v11",
-        "host": "localhost",
-        "port": 7099,
-        "access_token": "",
-        "heartbeat_interval": 30000
-    },
-    "plugins": {
-        "enabled": [],
-        "disabled": [],
-        "plugin_dirs": ["plugins"]
-    },
-    "database": {
-        "type": "sqlite",
-        "url": "sqlite:///data/maibot.db"
-    },
-    "logging": {
-        "level": "INFO",
-        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        "file": "logs/maibot.log",
-        "console": true
-    }
-}
-EOF
-            print_success "MaiBot配置文件已创建"
-        else
-            print_info "MaiBot配置文件已存在，跳过创建"
-        fi
-    fi
-    
-    # 生成启动脚本
-    print_info "生成启动脚本..."
-    create_startup_scripts
-    
-    # 创建环境变量配置文件（可选）
-    print_info "创建环境变量配置..."
-    cat > "$INSTALL_BASE_DIR/maibot.env" << EOF
-# MaiBot环境变量配置
-export MAIBOT_HOME="$MAIBOT_DIR"
-export ADAPTER_HOME="$ADAPTER_DIR"
-export NAPCAT_HOME="$NAPCAT_DIR"
-export MAIBOT_CONFIG="$MAIBOT_DIR/config"
-export ADAPTER_CONFIG="$ADAPTER_DIR/config"
-export NAPCAT_CONFIG="$NAPCAT_DIR/config"
-export DISPLAY=:1
-EOF
-    
-    # 创建服务管理脚本
-    print_info "创建服务管理脚本..."
-    cat > "$INSTALL_BASE_DIR/maibot-service.sh" << 'EOF'
-#!/bin/bash
-# MaiBot服务管理脚本
-
-MAIBOT_BASE="/opt/maibot"
-MAIBOT_ENV="$MAIBOT_BASE/maibot.env"
-
-# 加载环境变量
-if [[ -f "$MAIBOT_ENV" ]]; then
-    source "$MAIBOT_ENV"
-fi
-
-# 获取进程ID
-get_pid() {
-    local service="$1"
-    case "$service" in
-        maibot)
-            pgrep -f "python3.*bot.py" | grep -v grep | head -1
-            ;;
-        adapter)
-            pgrep -f "maibot-napcat-adapter.*main.py" | grep -v grep | head -1
-            ;;
-        napcat)
-            pgrep -f "LD_PRELOAD.*libnapcat_launcher.so" | grep -v grep | head -1
-            ;;
-        xvfb)
-            pgrep -f "Xvfb :1" | grep -v grep | head -1
-            ;;
-    esac
-}
-
-# 检查服务状态
-status() {
-    local service="$1"
-    local pid=$(get_pid "$service")
-    if [[ -n "$pid" ]]; then
-        echo "$service is running (PID: $pid)"
+    if [[ ! -d "$NAPCAT_DIR" ]]; then
+        print_warning "NapcatQQ目录不存在，跳过配置"
         return 0
-    else
-        echo "$service is not running"
+    fi
+    
+    cd "$NAPCAT_DIR" || {
+        print_warning "无法进入NapcatQQ目录，跳过配置"
         return 1
-    fi
-}
-
-# 启动服务
-start() {
-    local service="$1"
+    }
     
-    case "$service" in
-        xvfb)
-            if ! status xvfb > /dev/null; then
-                echo "Starting Xvfb..."
-                Xvfb :1 -screen 0 1024x768x24 +extension GLX +render > /dev/null 2>&1 &
-                sleep 2
-            fi
-            ;;
-        napcat)
-            start xvfb
-            if ! status napcat > /dev/null; then
-                echo "Starting NapCat..."
-                cd "$NAPCAT_HOME"
-                nohup bash -c "export DISPLAY=:1; LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox" > /dev/null 2>&1 &
-                sleep 5
-            fi
-            ;;
-        adapter)
-            if ! status adapter > /dev/null; then
-                echo "Starting Adapter..."
-                cd "$ADAPTER_HOME"
-                source venv/bin/activate
-                nohup python3 main.py > /dev/null 2>&1 &
-                sleep 3
-            fi
-            ;;
-        maibot)
-            if ! status maibot > /dev/null; then
-                echo "Starting MaiBot..."
-                cd "$MAIBOT_HOME"
-                source venv/bin/activate
-                nohup python3 bot.py > /dev/null 2>&1 &
-                sleep 2
-            fi
-            ;;
-        all)
-            start xvfb
-            start napcat
-            start adapter
-            start maibot
-            ;;
-    esac
-}
-
-# 停止服务
-stop() {
-    local service="$1"
-    local pid=$(get_pid "$service")
+    # 创建NapCat配置目录
+    mkdir -p config
     
-    if [[ -n "$pid" ]]; then
-        echo "Stopping $service (PID: $pid)..."
-        kill "$pid"
-        sleep 2
+    # 提示用户输入QQ号
+    print_header "NapCatQQ配置"
+    echo -e "${YELLOW}请输入要配置的QQ号（纯数字）:${NC}"
+    
+    local qq_number=""
+    while true; do
+        read -p "QQ号: " qq_number
         
-        # 强制停止
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "Force stopping $service..."
-            kill -9 "$pid"
-        fi
-    else
-        echo "$service is not running"
-    fi
-}
-
-# 重启服务
-restart() {
-    local service="$1"
-    stop "$service"
-    sleep 2
-    start "$service"
-}
-
-# 显示所有服务状态
-status_all() {
-    echo "=== MaiBot 服务状态 ==="
-    status xvfb
-    status napcat
-    status adapter
-    status maibot
-}
-
-# 主函数
-case "$1" in
-    start)
-        start "${2:-all}"
-        ;;
-    stop)
-        if [[ "$2" == "all" ]] || [[ -z "$2" ]]; then
-            stop maibot
-            stop adapter
-            stop napcat
-            stop xvfb
+        # 验证输入是否为纯数字
+        if [[ "$qq_number" =~ ^[0-9]+$ ]] && [[ ${#qq_number} -ge 5 ]] && [[ ${#qq_number} -le 14 ]]; then
+            print_success "QQ号验证通过: $qq_number"
+            break
         else
-            stop "$2"
+            print_error "无效的QQ号！请输入5-14位纯数字"
         fi
-        ;;
-    restart)
-        restart "${2:-all}"
-        ;;
-    status)
-        if [[ -z "$2" ]]; then
-            status_all
-        else
-            status "$2"
-        fi
-        ;;
-    *)
-        echo "Usage: $0 {start|stop|restart|status} [service]"
-        echo "Services: maibot, adapter, napcat, xvfb, all"
-        exit 1
-        ;;
-esac
+    done
+    
+    # 创建napcat_{QQ}.json配置文件
+    print_info "创建NapCat基础配置文件..."
+    cat > "config/napcat_${qq_number}.json" << 'EOF'
+{
+  "fileLog": false,
+  "consoleLog": true,
+  "fileLogLevel": "debug",
+  "consoleLogLevel": "info",
+  "packetBackend": "auto",
+  "packetServer": "",
+  "o3HookMode": 1
+}
 EOF
     
-    chmod +x "$INSTALL_BASE_DIR/maibot-service.sh"
+    # 创建onebot11_{QQ}.json配置文件
+    print_info "创建OneBot v11配置文件..."
+    cat > "config/onebot11_${qq_number}.json" << 'EOF'
+{
+  "network": {
+    "httpServers": [],
+    "httpSseServers": [],
+    "httpClients": [],
+    "websocketServers": [],
+    "websocketClients": [
+      {
+        "enable": true,
+        "name": "MaiBot Main",
+        "url": "ws://localhost:8095",
+        "reportSelfMessage": false,
+        "messagePostFormat": "array",
+        "token": "",
+        "debug": false,
+        "heartInterval": 30000,
+        "reconnectInterval": 30000
+      }
+    ],
+    "plugins": []
+  },
+  "musicSignUrl": "",
+  "enableLocalFile2Url": false,
+  "parseMultMsg": false
+}
+EOF
     
-    print_success "模块连接配置完成"
+    print_success "NapcatQQ配置文件已创建"
     print_info "配置文件位置:"
-    print_info "  NapcatQQ: $NAPCAT_DIR/config/onebot11.json"
-    print_info "  Adapter: $ADAPTER_DIR/config/"
-    print_info "  MaiBot: $MAIBOT_DIR/config/"
-    print_info "服务管理: $INSTALL_BASE_DIR/maibot-service.sh {start|stop|restart|status}"
-    
-    log_message "模块连接配置完成"
+    print_info "  基础配置: $NAPCAT_DIR/config/napcat_${qq_number}.json"
+    print_info "  OneBot配置: $NAPCAT_DIR/config/onebot11_${qq_number}.json"
+    print_info "WebSocket连接地址: ws://localhost:8095"
+    print_info "QQ号: $qq_number"
+    log_message "NapcatQQ配置完成: QQ=$qq_number"
+    return 0
 }
 
 # 创建启动脚本
@@ -2368,7 +2125,7 @@ start_services() {
     
     # 检查服务管理脚本是否存在
     if [[ ! -f "$INSTALL_BASE_DIR/maibot-service.sh" ]]; then
-        print_error "服务管理脚本不存在，请先运行配置模块连接"
+        print_error "服务管理脚本不存在，请先运行NapcatQQ配置"
         return 1
     fi
     
@@ -2452,7 +2209,7 @@ full_install() {
     fi
     
     # 执行安装步骤
-    local steps=("更新软件包列表" "安装系统依赖" "创建安装目录" "安装Python" "安装MaiBot本体" "安装MaiBot-NapCat-Adapter" "安装NapcatQQ" "配置模块连接" "启动服务")
+    local steps=("更新软件包列表" "安装系统依赖" "创建安装目录" "安装Python" "安装MaiBot本体" "安装MaiBot-NapCat-Adapter" "安装NapcatQQ" "配置NapcatQQ" "启动服务")
     local total=${#steps[@]}
     
     for i in "${!steps[@]}"; do
@@ -2510,9 +2267,9 @@ full_install() {
                 }
                 ;;
             7)
-                # 配置模块连接
-                configure_modules || {
-                    print_error "模块连接配置失败"
+                # 配置NapcatQQ
+                configure_napcat || {
+                    print_error "NapcatQQ配置失败"
                     return 1
                 }
                 ;;
@@ -2668,11 +2425,11 @@ perform_custom_install() {
     
     # 配置已安装的组件
     if [[ $success_count -gt 0 ]]; then
-        print_info "配置已安装的组件..."
-        if configure_modules; then
-            print_success "组件配置完成"
+        print_info "配置NapcatQQ..."
+        if configure_napcat; then
+            print_success "NapcatQQ配置完成"
         else
-            print_warning "组件配置可能有问题"
+            print_warning "NapcatQQ配置可能有问题"
         fi
     fi
     
