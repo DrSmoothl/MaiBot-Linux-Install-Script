@@ -1029,6 +1029,9 @@ show_help() {
     echo "    napcat               更新NapcatQQ"
     echo "    all                  更新所有组件"
     echo ""
+    echo "  fix [component]       修复组件问题"
+    echo "    napcat               修复NapCat路径配置问题"
+    echo ""
     echo "  help                  显示此帮助信息"
     echo ""
     echo "Screen会话管理说明:"
@@ -1129,12 +1132,19 @@ start_napcat() {
         # 启动虚拟显示服务器和NapcatQQ
         screen -dmS "\$SESSION_NAPCAT" bash -c "
             cd '\$NAPCAT_DIR'
+            # 加载环境变量
+            if [[ -f '\$NAPCAT_DIR/napcat_env.sh' ]]; then
+                source '\$NAPCAT_DIR/napcat_env.sh'
+            fi
             # 启动虚拟显示服务器
             if ! pgrep -f 'Xvfb :1' > /dev/null; then
                 Xvfb :1 -screen 0 1024x768x24 +extension GLX +render > /dev/null 2>&1 &
                 sleep 3
             fi
             export DISPLAY=:1
+            # 设置NapCat路径环境变量
+            export NAPCAT_HOME='\$NAPCAT_DIR'
+            export NAPCAT_PATH='\$NAPCAT_DIR'
             # 启动NapcatQQ
             LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox
         "
@@ -1439,6 +1449,40 @@ case "\$1" in
         ;;
     update)
         echo "更新功能暂未实现"
+        ;;
+    fix)
+        case "\$2" in
+            napcat|"")
+                echo "修复NapCat路径配置..."
+                # 创建符号链接
+                if [[ ! -e "/maibot" ]]; then
+                    echo "创建符号链接 /maibot -> /opt/maibot"
+                    sudo ln -sf "/opt/maibot" "/maibot" 2>/dev/null || echo "警告: 无法创建符号链接"
+                fi
+                
+                # 检查文件是否存在
+                if [[ -f "\$NAPCAT_DIR/loadNapCat.js" ]]; then
+                    echo "✓ loadNapCat.js 文件存在"
+                else
+                    echo "✗ loadNapCat.js 文件不存在，请重新安装NapCat"
+                fi
+                
+                # 重新创建环境变量文件
+                cat > "\$NAPCAT_DIR/napcat_env.sh" << 'ENVEOF'
+#!/bin/bash
+export NAPCAT_HOME="\$NAPCAT_DIR"
+export NAPCAT_PATH="\$NAPCAT_DIR"
+export NAPCAT_CONFIG_PATH="\$NAPCAT_DIR/config"
+ENVEOF
+                chmod +x "\$NAPCAT_DIR/napcat_env.sh"
+                echo "✓ NapCat环境变量文件已更新"
+                echo "修复完成！请重启NapCat: maibot restart napcat"
+                ;;
+            *)
+                echo "错误: 未知的修复目标"
+                echo "可用选项: napcat"
+                ;;
+        esac
         ;;
     help|--help|-h|"")
         show_help
@@ -1870,78 +1914,202 @@ install_napcat() {
     # 清理临时文件
     rm -f "$napcat_file" QQ.rpm QQ.deb launcher.cpp 2>/dev/null || true
     
+    # 修复NapCat路径配置
+    fix_napcat_paths
+    
     print_success "NapcatQQ安装完成"
     log_message "NapcatQQ安装完成: $NAPCAT_DIR"
     return 0
+}
+
+# 修复NapCat路径配置
+fix_napcat_paths() {
+    print_info "修复NapCat路径配置..."
+    
+    # 创建符号链接，解决路径问题
+    if [[ ! -e "/maibot" ]]; then
+        print_info "创建符号链接 /maibot -> /opt/maibot"
+        sudo ln -sf "/opt/maibot" "/maibot" || {
+            print_warning "无法创建符号链接，将尝试其他方法"
+        }
+    fi
+    
+    # 确保loadNapCat.js文件存在
+    if [[ -f "$NAPCAT_DIR/loadNapCat.js" ]]; then
+        print_success "loadNapCat.js文件已存在"
+    else
+        print_warning "loadNapCat.js文件不存在，可能需要重新下载NapCat"
+    fi
+    
+    # 设置环境变量文件
+    cat > "$NAPCAT_DIR/napcat_env.sh" << EOF
+#!/bin/bash
+export NAPCAT_HOME="$NAPCAT_DIR"
+export NAPCAT_PATH="$NAPCAT_DIR"
+export NAPCAT_CONFIG_PATH="$NAPCAT_DIR/config"
+EOF
+    
+    chmod +x "$NAPCAT_DIR/napcat_env.sh"
+    print_success "NapCat路径配置修复完成"
 }
 
 # 安装LinuxQQ的辅助函数
 install_linux_qq() {
     local system_arch="$1"
     local qq_url=""
+    local qq_file=""
+    
+    print_info "安装LinuxQQ (架构: $system_arch, 包管理器: $PACKAGE_MANAGER)..."
     
     # 根据架构和包管理器确定下载链接
     if [[ "$system_arch" == "amd64" ]]; then
         case "$PACKAGE_MANAGER" in
             yum|dnf)
                 qq_url="https://dldir1.qq.com/qqfile/qq/QQNT/5aa2d8d6/linuxqq_3.2.17-34740_x86_64.rpm"
+                qq_file="QQ.rpm"
                 ;;
             apt)
                 qq_url="https://dldir1.qq.com/qqfile/qq/QQNT/5aa2d8d6/linuxqq_3.2.17-34740_amd64.deb"
+                qq_file="QQ.deb"
+                ;;
+            zypper)
+                qq_url="https://dldir1.qq.com/qqfile/qq/QQNT/5aa2d8d6/linuxqq_3.2.17-34740_x86_64.rpm"
+                qq_file="QQ.rpm"
+                ;;
+            pacman)
+                print_error "Arch Linux 用户请通过 AUR 安装 LinuxQQ: yay -S linuxqq"
+                print_info "或者手动下载并使用 pacman -U 安装 deb 包"
+                return 1
+                ;;
+            apk)
+                print_error "Alpine Linux 暂不支持 LinuxQQ，请使用其他发行版"
+                return 1
+                ;;
+            *)
+                print_error "不支持的包管理器: $PACKAGE_MANAGER"
+                return 1
                 ;;
         esac
     elif [[ "$system_arch" == "arm64" ]]; then
         case "$PACKAGE_MANAGER" in
             yum|dnf)
                 qq_url="https://dldir1.qq.com/qqfile/qq/QQNT/5aa2d8d6/linuxqq_3.2.17-34740_aarch64.rpm"
+                qq_file="QQ.rpm"
                 ;;
             apt)
                 qq_url="https://dldir1.qq.com/qqfile/qq/QQNT/5aa2d8d6/linuxqq_3.2.17-34740_arm64.deb"
+                qq_file="QQ.deb"
+                ;;
+            zypper)
+                qq_url="https://dldir1.qq.com/qqfile/qq/QQNT/5aa2d8d6/linuxqq_3.2.17-34740_aarch64.rpm"
+                qq_file="QQ.rpm"
+                ;;
+            pacman)
+                print_error "Arch Linux ARM64 用户请通过 AUR 安装 LinuxQQ: yay -S linuxqq"
+                return 1
+                ;;
+            apk)
+                print_error "Alpine Linux ARM64 暂不支持 LinuxQQ"
+                return 1
+                ;;
+            *)
+                print_error "不支持的包管理器: $PACKAGE_MANAGER"
+                return 1
                 ;;
         esac
+    else
+        print_error "不支持的系统架构: $system_arch"
+        print_info "支持的架构: amd64, arm64"
+        return 1
     fi
     
     if [[ -z "$qq_url" ]]; then
-        print_error "不支持的架构或包管理器组合: $system_arch + $PACKAGE_MANAGER"
+        print_error "无法确定QQ下载地址"
         return 1
     fi
     
     # 下载和安装QQ
     case "$PACKAGE_MANAGER" in
-        yum|dnf)
-            if [[ ! -f "QQ.rpm" ]]; then
-                curl -k -L -# "$qq_url" -o QQ.rpm 2>>"$LOG_FILE" || {
+        yum|dnf|zypper)
+            # RPM包处理
+            if [[ ! -f "$qq_file" ]]; then
+                print_info "下载LinuxQQ RPM包..."
+                curl -k -L -# "$qq_url" -o "$qq_file" 2>>"$LOG_FILE" || {
                     print_error "QQ下载失败"
                     log_message "ERROR: curl failed for QQ URL: $qq_url"
                     return 1
                 }
+            else
+                print_info "检测到已下载的QQ安装包，跳过下载..."
             fi
-            $INSTALL_CMD ./QQ.rpm 2>>"$LOG_FILE" || {
-                print_error "QQ安装失败"
-                log_message "ERROR: QQ package install failed"
+            
+            # 验证下载的文件
+            if [[ ! -f "$qq_file" ]]; then
+                print_error "QQ安装包不存在: $qq_file"
                 return 1
-            }
-            # 安装额外依赖
-            print_info "安装QQ运行依赖..."
-            $INSTALL_CMD nss libXScrnSaver || print_warning "某些依赖安装失败，但可能不影响运行"
-            # 对于RHEL/CentOS/Fedora，音频库通常是 alsa-lib
-            $INSTALL_CMD alsa-lib || print_warning "音频库安装失败，但可能不影响运行"
+            fi
+            
+            # 安装RPM包
+            case "$PACKAGE_MANAGER" in
+                yum|dnf)
+                    # 使用dnf/yum localinstall
+                    if command -v dnf &> /dev/null; then
+                        dnf localinstall -y "./$qq_file" 2>>"$LOG_FILE" || {
+                            print_error "QQ安装失败"
+                            log_message "ERROR: dnf localinstall failed"
+                            return 1
+                        }
+                    else
+                        yum localinstall -y "./$qq_file" 2>>"$LOG_FILE" || {
+                            print_error "QQ安装失败"
+                            log_message "ERROR: yum localinstall failed"
+                            return 1
+                        }
+                    fi
+                    # 安装额外依赖
+                    print_info "安装QQ运行依赖..."
+                    $INSTALL_CMD nss libXScrnSaver alsa-lib || print_warning "某些依赖安装失败，但可能不影响运行"
+                    ;;
+                zypper)
+                    zypper install -y "./$qq_file" 2>>"$LOG_FILE" || {
+                        print_error "QQ安装失败"
+                        log_message "ERROR: zypper install failed"
+                        return 1
+                    }
+                    # 安装额外依赖
+                    print_info "安装QQ运行依赖..."
+                    $INSTALL_CMD mozilla-nss libXss1 alsa || print_warning "某些依赖安装失败，但可能不影响运行"
+                    ;;
+            esac
             ;;
         apt)
-            if [[ ! -f "QQ.deb" ]]; then
-                curl -k -L -# "$qq_url" -o QQ.deb 2>>"$LOG_FILE" || {
+            # DEB包处理
+            if [[ ! -f "$qq_file" ]]; then
+                print_info "下载LinuxQQ DEB包..."
+                curl -k -L -# "$qq_url" -o "$qq_file" 2>>"$LOG_FILE" || {
                     print_error "QQ下载失败"
                     log_message "ERROR: curl failed for QQ URL: $qq_url"
                     return 1
                 }
+            else
+                print_info "检测到已下载的QQ安装包，跳过下载..."
             fi
-            # 安装QQ及其依赖
-            apt install -f -y --allow-downgrades ./QQ.deb 2>>"$LOG_FILE" || {
+            
+            # 验证下载的文件
+            if [[ ! -f "$qq_file" ]]; then
+                print_error "QQ安装包不存在: $qq_file"
+                return 1
+            fi
+            
+            # 安装DEB包
+            apt install -f -y --allow-downgrades "./$qq_file" 2>>"$LOG_FILE" || {
                 print_error "QQ安装失败"
-                log_message "ERROR: QQ package install failed"
+                log_message "ERROR: apt install failed"
                 return 1
             }
+            
             # 安装额外依赖
+            print_info "安装QQ运行依赖..."
             $INSTALL_CMD libnss3 libgbm1 || true
             
             # 智能安装 libasound2 依赖
@@ -1959,7 +2127,15 @@ install_linux_qq() {
                 $INSTALL_CMD liboss4-salsa-asound2 || print_warning "音频库安装失败，但可能不影响运行"
             fi
             ;;
+        *)
+            print_error "不支持的包管理器: $PACKAGE_MANAGER"
+            return 1
+            ;;
     esac
+    
+    # 清理下载的安装包
+    print_info "清理临时文件..."
+    rm -f "$qq_file" 2>/dev/null || true
     
     print_success "LinuxQQ安装完成"
     return 0
@@ -1972,26 +2148,91 @@ install_napcat_launcher() {
     local cpp_file="launcher.cpp"
     local so_file="libnapcat_launcher.so"
     
+    print_info "下载并编译NapCat启动器..."
+    
+    # 检查是否已经存在编译好的文件
+    if [[ -f "$so_file" ]]; then
+        print_info "检测到已编译的启动器文件，跳过编译..."
+        return 0
+    fi
+    
     # 构建下载URL
     local download_url="$cpp_url"
     if [[ -n "$target_proxy" ]]; then
         local cpp_url_path="${cpp_url#https://}"
         download_url="$target_proxy/$cpp_url_path"
+        print_debug "使用代理下载: $download_url"
+    else
+        print_debug "直连下载: $download_url"
     fi
     
     # 下载源码
+    print_info "下载启动器源码..."
     curl -k -L -# "$download_url" -o "$cpp_file" 2>>"$LOG_FILE" || {
         print_error "启动器源码下载失败"
         log_message "ERROR: curl failed for launcher source: $download_url"
+        # 如果使用代理失败，尝试直连
+        if [[ -n "$target_proxy" ]]; then
+            print_info "代理下载失败，尝试直连..."
+            curl -k -L -# "$cpp_url" -o "$cpp_file" 2>>"$LOG_FILE" || {
+                print_error "直连下载也失败"
+                return 1
+            }
+        else
+            return 1
+        fi
+    }
+    
+    # 验证下载的文件
+    if [[ ! -f "$cpp_file" ]] || [[ ! -s "$cpp_file" ]]; then
+        print_error "下载的源码文件无效或为空"
+        return 1
+    fi
+    
+    print_success "启动器源码下载完成"
+    
+    # 检查编译环境
+    if ! command -v g++ &> /dev/null; then
+        print_error "未找到g++编译器，请先安装开发工具"
+        case "$PACKAGE_MANAGER" in
+            apt)
+                print_info "Ubuntu/Debian 用户请运行: apt install build-essential"
+                ;;
+            yum|dnf)
+                print_info "CentOS/RHEL/Fedora 用户请运行: $PACKAGE_MANAGER groupinstall \"Development Tools\""
+                ;;
+            zypper)
+                print_info "openSUSE 用户请运行: zypper install -t pattern devel_basis"
+                ;;
+            pacman)
+                print_info "Arch Linux 用户请运行: pacman -S base-devel"
+                ;;
+        esac
+        return 1
+    fi
+    
+    # 编译启动器
+    print_info "编译NapCat启动器..."
+    g++ -shared -fPIC "$cpp_file" -o "$so_file" -ldl 2>>"$LOG_FILE" || {
+        print_error "启动器编译失败"
+        log_message "ERROR: g++ compilation failed for launcher"
+        # 显示详细的编译错误信息
+        print_info "正在显示编译错误信息..."
+        g++ -shared -fPIC "$cpp_file" -o "$so_file" -ldl
         return 1
     }
     
-    # 编译
-    g++ -shared -fPIC "$cpp_file" -o "$so_file" -ldl 2>>"$LOG_FILE" || {
-        print_error "启动器编译失败，请检查g++是否安装"
-        log_message "ERROR: g++ compilation failed for launcher"
+    # 验证编译结果
+    if [[ ! -f "$so_file" ]]; then
+        print_error "编译后未找到启动器文件: $so_file"
         return 1
-    }
+    fi
+    
+    # 设置权限
+    chmod +x "$so_file" 2>/dev/null || true
+    
+    # 清理源码文件
+    rm -f "$cpp_file" 2>/dev/null || true
     
     print_success "NapCat启动器编译完成"
     return 0
