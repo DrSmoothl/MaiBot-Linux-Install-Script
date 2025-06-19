@@ -424,6 +424,15 @@ check_system_requirements() {
     log_message "系统要求检查完成"
 }
 
+check_system() {
+    print_info "执行系统检查..."
+    check_root
+    detect_os
+    detect_package_manager
+    check_system_requirements
+    return 0
+}
+
 # =============================================================================
 # 依赖检查和安装函数
 # =============================================================================
@@ -2580,7 +2589,7 @@ perform_custom_install() {
     
     # 系统检查和准备
     print_info "执行系统检查..."
-    if ! check_system; then
+    if ! check_system; then  # 使用新定义的 check_system 函数
         print_error "系统检查失败"
         return 1
     fi
