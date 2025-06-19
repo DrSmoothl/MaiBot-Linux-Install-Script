@@ -433,6 +433,17 @@ check_system() {
     return 0
 }
 
+update_package_list() {
+    print_info "执行包管理器更新: $UPDATE_CMD"
+    if eval "$UPDATE_CMD"; then
+        print_success "软件包列表更新成功"
+        return 0
+    else
+        print_error "软件包列表更新失败"
+        return 1
+    fi
+}
+
 # =============================================================================
 # 依赖检查和安装函数
 # =============================================================================
@@ -2589,14 +2600,14 @@ perform_custom_install() {
     
     # 系统检查和准备
     print_info "执行系统检查..."
-    if ! check_system; then  # 使用新定义的 check_system 函数
+    if ! check_system; then
         print_error "系统检查失败"
         return 1
     fi
     
     # 更新软件包列表
     print_info "更新软件包列表..."
-    if ! update_package_list; then
+    if ! update_package_list; then  # 使用新定义的 update_package_list 函数
         print_error "软件包列表更新失败"
         return 1
     fi
